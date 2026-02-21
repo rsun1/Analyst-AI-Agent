@@ -1,6 +1,6 @@
 # Product Requirements Document: Analytics AI Agent
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Last updated:** February 2026  
 **Status:** Draft
 
@@ -45,6 +45,10 @@ The **Analytics AI Agent** is a Python application that lets stakeholders (e.g. 
   - Named metric definitions (e.g. `seller_tpv_per_month`, `monthly_gmv`, `revenue_by_product_category`)
   - Sample SQL queries for SQLite (e.g. using `strftime` for dates)
 - **Role:** Sole source of truth for RAG: chunks from this file are embedded and used to retrieve relevant context when generating SQL.
+- **Required structure (chunking contract):** The markdown must follow a fixed structure so ingestion can split it with native string operations without destroying context. Every logical unit must begin with a specific header level:
+  - Use **`##`** (double hash) for top-level section headers (e.g. `## 1. Sales`, `## 2. Customers & orders`).
+  - Use **`###`** (triple hash) for each sub-unit: **`### definition: <name>`** for a metric or table definition, and **`### SQL query`** for the corresponding sample query block.
+  - The ingestion script will split the document on these delimiters (e.g. on `### definition:` so that each chunk is one definition plus its following `### SQL query` and code block). No other header levels may be used for these logical boundaries so that one logical thought clearly ends and the next begins.
 
 ### 2.3 Environment
 
@@ -82,9 +86,9 @@ The **Analytics AI Agent** is a Python application that lets stakeholders (e.g. 
 
 | ID | Requirement | Details |
 |----|-------------|---------|
-| FR-1.1 | **Ingest schema doc** | Read `olist_schema_queries.md` and split into chunks (e.g. by section, by definition + query block). Chunk size/strategy is an implementation choice but must preserve logical units (e.g. one definition + its SQL together). |
+| FR-1.1 | **Ingest schema doc** | Read `olist_schema_queries.md` and split into chunks using the **mandated structure** (see §2.2): split on the `###` header delimiter so each chunk is one logical unit (e.g. from `### definition: <name>` through its `### SQL query` and code block, until the next `### definition:`). Implementation must use only native string operations (e.g. `str.split`, line scanning for `### `) so that one logical thought is never broken across chunks. |
 | FR-1.2 | **Generate embeddings** | For each chunk, call the **OpenAI Embeddings API** (e.g. `text-embedding-3-small` or current recommended model) to obtain a vector. No open-source or local embedding models. |
-| FR-1.3 | **Store for retrieval** | Persist chunk text and corresponding embedding so that later steps can run similarity search. Storage must be implementable without FAISS/LangChain/Vanna (e.g. in-memory structures, JSON, or a simple SQLite table with vector representation and cosine similarity in Python). |
+| FR-1.3 | **Store for retrieval** | Persist chunk text and corresponding embedding in a **local JSON file** (no SQLite table for vectors). The file must store a single dictionary mapping each chunk text (or a stable chunk id) to its embedding vector (list of floats). At runtime, load the entire JSON into memory so that similarity search is performed in-memory over the full vector set; this avoids deserializing binary blobs row-by-row and keeps cosine similarity fast. The schema document is small, so holding the whole vector space in memory is required and sufficient. No FAISS/LangChain/Vanna. |
 | FR-1.4 | **Refresh path** | Provide a way to re-run ingestion (e.g. script or CLI) when `olist_schema_queries.md` is updated. |
 | FR-1.5 | **Cross-section context for RAG** | Embedding and retrieval must be designed so the agent can understand and use context **fluently across examples**. A single user question may require combining knowledge from **multiple sections** of `olist_schema_queries.md` (e.g. Sales, Customers & orders, and another section) to produce one correct SQL query—i.e. the needed knowledge must be **connected together**, not isolated to one example. The agent must **not** be limited to answering only by matching one question to one example in the file; it must be able to retrieve and synthesize relevant content from **all** applicable sections and use that combined context to generate accurate, composite queries. Chunking and retrieval (e.g. top-k and context window usage) should support returning multiple relevant chunks from different parts of the document when a question spans several concepts. |
 
@@ -93,7 +97,7 @@ The **Analytics AI Agent** is a Python application that lets stakeholders (e.g. 
 | ID | Requirement | Details |
 |----|-------------|---------|
 | FR-2.1 | **Accept user question** | Accept a natural-language question from the user (e.g. via CLI prompt, or later via a simple UI). |
-| FR-2.2 | **Retrieve relevant context** | Embed the user question with the same OpenAI embedding model; retrieve the top-k most similar chunks from the store (e.g. by cosine similarity). Use only this retrieved context plus the question for SQL generation. |
+| FR-2.2 | **Retrieve relevant context** | Embed the user question with the same OpenAI embedding model; retrieve the **top-k** most similar chunks from the in-memory store by cosine similarity. **Token limit:** Cap context injection at a **strict maximum of the top 5 most similar chunks** (k ≤ 5). Use only this retrieved context plus the question for SQL generation. This keeps prompt size bounded, API latency low, and testing costs under control. |
 | FR-2.3 | **Generate SQL and reasoning** | Call the **OpenAI Chat/Completion API** with a system prompt that: (a) restricts the agent to the provided schema/query context, (b) requires valid SQLite SQL, (c) requires a short explanation of why this query answers the question. Output: one proposed SQL query + explanation. No execution in this step. |
 | FR-2.4 | **Present to user** | Show the user the proposed SQL and the explanation. Ask for explicit confirmation before executing (e.g. “Proceed? (y/n)” or “Edit/Approve/Cancel”). |
 
@@ -104,7 +108,7 @@ The **Analytics AI Agent** is a Python application that lets stakeholders (e.g. 
 | FR-3.1 | **Execute only after approval** | Run the approved SQL against `olist.sqlite` only when the user agrees to proceed. Use Python’s built-in `sqlite3` (or equivalent) to execute; no external query services. |
 | FR-3.2 | **Return raw results** | Return the result set to the user in a clear format (e.g. table in console, or structured data for a future UI). |
 | FR-3.3 | **Explain in plain English** | Send the result set (and optionally the query and question) to the OpenAI Chat API with a prompt that asks for: a short plain-English summary of what the numbers mean and 1–3 concrete business insights or recommendations. |
-| FR-3.4 | **Handle errors** | If SQL execution fails (syntax error, missing table, etc.), surface the error to the user and do not call the “explain results” step. Optionally offer to regenerate SQL. |
+| FR-3.4 | **Automatic self-correction on SQL failure** | If SQL execution fails (e.g. `sqlite3.OperationalError` or equivalent), **do not surface the failure to the user immediately**. Instead: (1) catch the exception and the exact error string from the database engine; (2) send the **failed query** and the **error message** to the OpenAI model with a prompt asking for a corrected SQL query; (3) retry execution with the corrected query. Only if the corrected query still fails (or after a defined maximum number of retries) should the agent show the error to the user and optionally offer to try again. The “explain results” step is skipped until execution succeeds. |
 
 ---
 
@@ -116,7 +120,7 @@ The **Analytics AI Agent** is a Python application that lets stakeholders (e.g. 
 | NFR-2 | **OpenAI only for ML** – Embeddings and text generation must use OpenAI APIs only; no LangChain, FAISS, Vanna.ai, or other open-source RAG/vector frameworks. |
 | NFR-3 | **Single API key** – One `OPENAI_API_KEY` in `.env` suffices for the described flow. |
 | NFR-4 | **Local-first** – Database and embedding store are local; no requirement for cloud DB or external vector DB for MVP. |
-| NFR-5 | **Determinism / safety** – Only `SELECT` statements should be executed; reject or strip any DDL/DML if present (implementation detail). |
+| NFR-5 | **Database safety (read-only)** – The Python `sqlite3` connection to `olist.sqlite` **must** be opened using a **read-only URI** (e.g. `file:path/to/olist.sqlite?mode=ro` or the environment’s equivalent). This enforces safety at the file system / database engine level: even if the LLM hallucinates a `DROP TABLE`, `INSERT`, or other DDL/DML, the engine will reject it. Do not rely on prompt engineering or text filtering alone for safety. |
 
 ---
 
@@ -178,3 +182,4 @@ The **Analytics AI Agent** is a Python application that lets stakeholders (e.g. 
 | Version | Date       | Author | Changes |
 |---------|------------|--------|---------|
 | 1.0     | Feb 2026   | —      | Initial PRD for Analytics AI Agent. |
+| 1.1     | Feb 2026   | —      | Chunking heuristic (mandated `##`/`###` structure); vector storage via JSON file; automatic SQL self-correction loop; read-only DB URI; retrieval cap at top 5 chunks. |
