@@ -19,8 +19,16 @@ env/
 # IDE / editor
 .cursor/
 .vscode/
+.vscode.example/
 *.swp
 *.swo
+
+# Cursor / project-specific (do not commit)
+.cursorrules
+.cursorignore
+README_devin.cursorrules.md
+.devcontainer/
+tools/
 
 # OS
 .DS_Store
