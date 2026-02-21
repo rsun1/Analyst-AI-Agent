@@ -1,0 +1,4 @@
+# Minimal deps for Analytics AI Agent (PRD §7)
+# Install: pip install -r requirements-agent.txt
+openai>=1.0.0
+python-dotenv>=1.0.0
