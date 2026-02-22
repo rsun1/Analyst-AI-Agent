@@ -2,16 +2,22 @@
 Generate proposed SQL and short explanation from user question + RAG context.
 Also handles user-driven SQL revision (edit loop, FR-2.5/FR-2.6).
 Uses OpenAI Chat only; no execution.
+
+SQL accuracy strategy:
+  - The SYSTEM prompt always contains the full schema catalog (exact table/column
+    names, FK relationships, enums, pitfalls) loaded from schema_catalog.yml.
+  - The USER message contains the RAG-retrieved metric definitions and sample queries.
+  - This two-layer approach ensures the model can never guess column or table names:
+    the ground-truth schema is always present regardless of what RAG returns.
 """
 from openai import OpenAI
 
 from config import CHAT_MODEL, OPENAI_API_KEY
+from schema_loader import render_schema_block
 
-SYSTEM_PROMPT = """You are a SQL expert for the Olist Brazilian e-commerce SQLite database.
-You must ONLY use the schema, table/column definitions, and sample SQL provided in the context below.
-Generate valid SQLite SQL only (e.g. use strftime for dates, not date_trunc).
-Output exactly one SQL query and a short explanation of why it answers the question.
+# ── Shared response format instructions ───────────────────────────────────────
 
+_RESPONSE_FORMAT = """
 Respond in this exact format, with no extra text before or after:
 
 EXPLANATION:
@@ -20,41 +26,48 @@ EXPLANATION:
 SQL:
 ```sql
 <single SQLite query>
-```
-"""
+```"""
+
+# ── System prompts ─────────────────────────────────────────────────────────────
+
+def _build_system_prompt() -> str:
+    """Build the system prompt with the always-on schema catalog embedded."""
+    schema_block = render_schema_block()
+    return f"""You are a SQL expert for the Olist Brazilian e-commerce SQLite database.
+
+{schema_block}
+
+Rules:
+- Use ONLY the table and column names listed in the schema above. Never invent or guess names.
+- Use ONLY the FK relationships listed above for JOIN conditions.
+- Generate valid SQLite SQL (strftime for date grouping, julianday for date differences).
+- Output exactly one SQL query and a short explanation.
+{_RESPONSE_FORMAT}"""
 
 
-def generate_sql_and_explanation(question: str, rag_context: list[str]) -> tuple[str, str]:
-    """
-    Call OpenAI Chat with system prompt (restrict to context, SQLite, explanation)
-    and user message (question + context). Returns (sql_query, explanation).
-    """
-    if not OPENAI_API_KEY:
-        raise ValueError("OPENAI_API_KEY is not set in .env")
+def _build_revise_system_prompt() -> str:
+    """System prompt for the SQL revision (edit-loop) path."""
+    schema_block = render_schema_block()
+    return f"""You are a SQL expert for the Olist Brazilian e-commerce SQLite database.
+The user has reviewed a proposed SQLite query and requested a change.
 
-    context_block = "\n\n---\n\n".join(rag_context) if rag_context else "(No schema context provided.)"
+{schema_block}
 
-    user_content = f"""Schema and sample queries (use only this context):
+Rules:
+- Apply the user's requested change to the existing SQL.
+- Use ONLY the table and column names listed in the schema above. Never invent or guess names.
+- Use ONLY the FK relationships listed above for JOIN conditions.
+- Generate valid SQLite SQL (strftime for date grouping, julianday for date differences).
+- If the user's instruction is too vague, contradictory, or does not clearly specify a SQL
+  change, respond with exactly the word UNCLEAR on a line by itself, and nothing else.
+- Otherwise respond in the format below.
+{_RESPONSE_FORMAT}"""
 
-{context_block}
 
----
+# ── Response parser (shared) ───────────────────────────────────────────────────
 
-User question: {question}
-
-Provide one SQLite query and a short explanation."""
-
-    client = OpenAI(api_key=OPENAI_API_KEY)
-    response = client.chat.completions.create(
-        model=CHAT_MODEL,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
-        ],
-    )
-    content = (response.choices[0].message.content or "").strip()
-
-    # Parse EXPLANATION: ... SQL: ```sql ... ```
+def _parse_response(content: str) -> tuple[str, str]:
+    """Parse EXPLANATION: / SQL: response into (sql, explanation). Returns ("", "") on failure."""
     explanation = ""
     sql = ""
 
@@ -73,36 +86,55 @@ Provide one SQLite query and a short explanation."""
         else:
             explanation = parts.strip()
     else:
-        # Fallback: try to extract first ```sql ... ``` block
         if "```sql" in content:
             sql = content.split("```sql", 1)[1].split("```", 1)[0].strip()
-        explanation = content[:500] if content else "No explanation generated."
+        explanation = content[:500] if content else ""
 
     return sql, explanation
 
 
-# Sentinel returned when the user's edit instruction is too vague to act on (FR-2.6).
+# ── Public API ─────────────────────────────────────────────────────────────────
+
+def generate_sql_and_explanation(question: str, rag_context: list[str]) -> tuple[str, str]:
+    """
+    Generate a SQLite query and explanation for the given question.
+
+    The system prompt always contains the full schema catalog (ground truth).
+    The user message adds RAG-retrieved metric definitions and query patterns.
+    Returns (sql_query, explanation).
+    """
+    if not OPENAI_API_KEY:
+        raise ValueError("OPENAI_API_KEY is not set in .env")
+
+    context_block = "\n\n---\n\n".join(rag_context) if rag_context else "(No sample queries retrieved.)"
+
+    user_content = f"""Relevant metric definitions and sample queries (for query pattern guidance):
+
+{context_block}
+
+---
+
+User question: {question}
+
+Provide one SQLite query and a short explanation."""
+
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    response = client.chat.completions.create(
+        model=CHAT_MODEL,
+        messages=[
+            {"role": "system", "content": _build_system_prompt()},
+            {"role": "user", "content": user_content},
+        ],
+    )
+    content = (response.choices[0].message.content or "").strip()
+    sql, explanation = _parse_response(content)
+    return sql, explanation
+
+
+# ── Edit loop (FR-2.5 / FR-2.6) ───────────────────────────────────────────────
+
+# Sentinel returned when the user's edit instruction is too vague to act on.
 UNCLEAR_INSTRUCTION = "__UNCLEAR__"
-
-REVISE_SYSTEM_PROMPT = """You are a SQL expert for the Olist Brazilian e-commerce SQLite database.
-The user has reviewed a proposed SQLite query and requested a change.
-Apply the user's requested change to the SQL and return the revised query with a short explanation.
-Use ONLY table and column names that appear in the schema context provided.
-Generate valid SQLite SQL only (e.g. use strftime for dates, not date_trunc).
-
-If the user's instruction is too vague, contradictory, or does not clearly specify a SQL change,
-respond with exactly the word UNCLEAR on a line by itself, and nothing else.
-
-Otherwise respond in this exact format:
-
-EXPLANATION:
-<1-3 sentences describing what changed and why>
-
-SQL:
-```sql
-<single revised SQLite query>
-```
-"""
 
 
 def revise_sql(
@@ -121,9 +153,9 @@ def revise_sql(
     if not OPENAI_API_KEY:
         raise ValueError("OPENAI_API_KEY is not set in .env")
 
-    context_block = "\n\n---\n\n".join(rag_context) if rag_context else "(No schema context provided.)"
+    context_block = "\n\n---\n\n".join(rag_context) if rag_context else "(No sample queries retrieved.)"
 
-    user_content = f"""Schema and sample queries (use only these tables/columns):
+    user_content = f"""Relevant metric definitions and sample queries (for query pattern guidance):
 
 {context_block}
 
@@ -144,7 +176,7 @@ Apply the change and return the revised SQL, or respond with UNCLEAR if the inst
     response = client.chat.completions.create(
         model=CHAT_MODEL,
         messages=[
-            {"role": "system", "content": REVISE_SYSTEM_PROMPT},
+            {"role": "system", "content": _build_revise_system_prompt()},
             {"role": "user", "content": user_content},
         ],
     )
@@ -154,28 +186,7 @@ Apply the change and return the revised SQL, or respond with UNCLEAR if the inst
     if content.strip().upper() == "UNCLEAR" or content.strip().upper().startswith("UNCLEAR\n"):
         return UNCLEAR_INSTRUCTION, ""
 
-    # Parse the normal EXPLANATION / SQL response (same format as generate_sql_and_explanation)
-    new_explanation = ""
-    new_sql = ""
-
-    if "EXPLANATION:" in content:
-        parts = content.split("EXPLANATION:", 1)[1]
-        if "SQL:" in parts:
-            expl_part, sql_part = parts.split("SQL:", 1)
-            new_explanation = expl_part.strip()
-            sql_part = sql_part.strip()
-            if "```sql" in sql_part:
-                new_sql = sql_part.split("```sql", 1)[1].split("```", 1)[0].strip()
-            elif "```" in sql_part:
-                new_sql = sql_part.split("```", 2)[1].strip()
-            else:
-                new_sql = sql_part
-        else:
-            new_explanation = parts.strip()
-    else:
-        if "```sql" in content:
-            new_sql = content.split("```sql", 1)[1].split("```", 1)[0].strip()
-        new_explanation = content[:500] if content else "No explanation generated."
+    new_sql, new_explanation = _parse_response(content)
 
     # If the model returned something but no parseable SQL, treat as unclear
     if not new_sql:

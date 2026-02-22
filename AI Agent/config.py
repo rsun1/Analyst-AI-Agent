@@ -24,6 +24,9 @@ OLIST_DB_PATH = os.getenv("OLIST_DB_PATH") or str(BASE_DIR / "olist.sqlite")
 SCHEMA_DOC_PATH = os.getenv("SCHEMA_DOC_PATH") or str(BASE_DIR / "olist_schema_queries.md")
 EMBEDDINGS_STORE_PATH = os.getenv("EMBEDDINGS_STORE_PATH") or str(BASE_DIR / "embeddings_store.json")
 
+# Structured schema catalog (always injected into SQL prompts – not via RAG)
+SCHEMA_CATALOG_PATH = os.getenv("SCHEMA_CATALOG_PATH") or str(BASE_DIR / "schema_catalog.yml")
+
 # Retrieval: top-k chunks (PRD: k <= 5)
 TOP_K_CHUNKS = 5
 
