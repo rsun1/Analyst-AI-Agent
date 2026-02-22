@@ -1,6 +1,6 @@
 # Product Requirements Document: Analytics AI Agent
 
-**Version:** 1.1  
+**Version:** 1.2  
 **Last updated:** February 2026  
 **Status:** Draft
 
@@ -100,6 +100,8 @@ The **Analytics AI Agent** is a Python application that lets stakeholders (e.g. 
 | FR-2.2 | **Retrieve relevant context** | Embed the user question with the same OpenAI embedding model; retrieve the **top-k** most similar chunks from the in-memory store by cosine similarity. **Token limit:** Cap context injection at a **strict maximum of the top 5 most similar chunks** (k ≤ 5). Use only this retrieved context plus the question for SQL generation. This keeps prompt size bounded, API latency low, and testing costs under control. |
 | FR-2.3 | **Generate SQL and reasoning** | Call the **OpenAI Chat/Completion API** with a system prompt that: (a) restricts the agent to the provided schema/query context, (b) requires valid SQLite SQL, (c) requires a short explanation of why this query answers the question. Output: one proposed SQL query + explanation. No execution in this step. |
 | FR-2.4 | **Present to user** | Show the user the proposed SQL and the explanation. Ask for explicit confirmation before executing (e.g. “Proceed? (y/n)” or “Edit/Approve/Cancel”). |
+| FR-2.5 | **Edit loop when user declines** | If the user responds **no** (or equivalent) to "Proceed? (y/n)", prompt the user: **"What needs to be changed?"** Then: (1) use the user's free-text input to revise the SQL (via the OpenAI Chat API, with the current SQL + RAG context + user instruction); (2) present the revised SQL and explanation and ask "Proceed? (y/n)" again. This edit loop continues for **at most 5 attempts** (configurable). If the user has not approved after the maximum attempts, the agent stops with a clear message (e.g. "Too many attempts.") and does not execute. If the user approves ("y" / "yes") at any point, the flow proceeds to execution (Phase 3). |
+| FR-2.6 | **Unclear edit instruction** | When the user provides feedback in the edit loop ("What needs to be changed?") and the model cannot derive a clear SQL change from that input, the agent must **not** guess or invent a revision. Instead, respond to the user: **"Unclear instruction. Can you please rephrase."** and prompt again for "What needs to be changed?" (without counting that as an attempt toward the 5-attempt limit, or as defined by implementation policy). The goal is to avoid executing incorrect or unintended SQL due to ambiguous feedback. |
 
 ### 4.3 Phase 3: Execution and Results + Insights
 
@@ -138,8 +140,9 @@ The **Analytics AI Agent** is a Python application that lets stakeholders (e.g. 
    - “Reason: …”  
    - “Proceed? (y/n)”
 
-4. **Approve**  
-   User confirms.
+4. **Approve or edit**  
+   - If the user confirms (**y** / yes), go to step 5 (Execute).  
+   - If the user declines (**n** / no), the agent asks: **"What needs to be changed?"** The user describes the desired change in natural language. The agent revises the SQL using the OpenAI Chat API (current SQL + RAG context + user instruction), then shows the revised SQL and asks "Proceed? (y/n)" again. This loop repeats **at most 5 times**. If the user's instruction is unclear and the agent cannot determine a concrete SQL change, the agent responds: **"Unclear instruction. Can you please rephrase."** and asks again for "What needs to be changed?" (without exhausting the attempt count, per implementation policy). After 5 attempts without approval, the agent stops with a message such as "Too many attempts." and does not execute.
 
 5. **Execute**  
    Agent runs the SQL on `olist.sqlite` and returns the result table.
@@ -183,3 +186,4 @@ The **Analytics AI Agent** is a Python application that lets stakeholders (e.g. 
 |---------|------------|--------|---------|
 | 1.0     | Feb 2026   | —      | Initial PRD for Analytics AI Agent. |
 | 1.1     | Feb 2026   | —      | Chunking heuristic (mandated `##`/`###` structure); vector storage via JSON file; automatic SQL self-correction loop; read-only DB URI; retrieval cap at top 5 chunks. |
+| 1.2     | Feb 2026   | —      | Edit loop on "Proceed? (y/n)" decline: "What needs to be changed?" → revise SQL via LLM → re-ask "Proceed? (y/n)"; max 5 attempts; "Unclear instruction. Can you please rephrase." when feedback is ambiguous. |

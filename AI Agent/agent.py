@@ -1,17 +1,17 @@
 """
 Analytics AI Agent: CLI flow.
-Ask question → RAG → propose SQL + explanation → user approval → execute (with self-correction) → insights.
+Ask question → RAG → propose SQL + explanation → approve/edit loop → execute → insights.
 """
 import sqlite3
 import sys
 
-from config import MAX_SQL_RETRIES, OLIST_DB_PATH
+from config import MAX_EDIT_ATTEMPTS, MAX_SQL_RETRIES, OLIST_DB_PATH
 from db import execute_query
 from insights import explain_results
 from rag import retrieve
 from sql_correction import get_corrected_sql
 from sql_errors import classify_sqlite_error
-from sql_generator import generate_sql_and_explanation
+from sql_generator import UNCLEAR_INSTRUCTION, generate_sql_and_explanation, revise_sql
 
 
 def print_table(columns: list[str], rows: list[tuple], max_display: int = 50) -> None:
@@ -35,9 +35,18 @@ def print_table(columns: list[str], rows: list[tuple], max_display: int = 50) ->
         print(f"... ({len(rows) - max_display} more rows)")
 
 
+def _show_proposed(sql: str, explanation: str) -> None:
+    """Print the proposed SQL and explanation."""
+    print("\n--- Proposed query ---")
+    print("Reason:", explanation)
+    print("\nSQL:")
+    print(sql)
+    print("---")
+
+
 def run_agent_loop(question: str | None = None) -> None:
     """
-    One full cycle: question → propose SQL → approve → execute (with retries) → explain.
+    One full cycle: question → propose SQL → approve/edit loop → execute → explain.
     If question is None, prompt from stdin.
     """
     q = question or input("Your question about the Olist data: ").strip()
@@ -68,14 +77,51 @@ def run_agent_loop(question: str | None = None) -> None:
         print("No SQL was generated. Please rephrase your question.")
         return
 
-    print("\n--- Proposed query ---")
-    print("Reason:", explanation)
-    print("\nSQL:")
-    print(sql)
-    print("\n---")
-    confirm = input("Proceed? (y/n): ").strip().lower()
-    if confirm != "y" and confirm != "yes":
-        print("Aborted.")
+    # Phase 2 – approve / edit loop (FR-2.5, FR-2.6)
+    _show_proposed(sql, explanation)
+    approved = False
+    for edit_attempt in range(MAX_EDIT_ATTEMPTS):
+        confirm = input("Proceed? (y/n): ").strip().lower()
+
+        if confirm in ("y", "yes"):
+            approved = True
+            break
+
+        # User declined — ask what to change
+        while True:
+            instruction = input("What needs to be changed? ").strip()
+            if not instruction:
+                print("Please describe what you'd like to change, or type 'n' to abort.")
+                continue
+
+            if instruction.lower() in ("abort", "cancel", "quit", "exit", "n", "no"):
+                print("Aborted.")
+                return
+
+            print("Revising SQL...")
+            try:
+                revised_sql, revised_explanation = revise_sql(
+                    sql, explanation, instruction, rag_context
+                )
+            except Exception as e:
+                print(f"Error revising SQL: {e}")
+                break
+
+            if revised_sql == UNCLEAR_INSTRUCTION:
+                # FR-2.6: ambiguous instruction — do not count as an attempt
+                print("Unclear instruction. Can you please rephrase.")
+                continue
+
+            # Got a valid revision — update, show, and break inner loop to re-ask Proceed?
+            sql, explanation = revised_sql, revised_explanation
+            _show_proposed(sql, explanation)
+            break
+        else:
+            # inner while broke via error path — fall through to next edit_attempt
+            pass
+
+    if not approved:
+        print(f"Too many attempts ({MAX_EDIT_ATTEMPTS}). Exiting without executing.")
         return
 
     # Phase 3: Execute (with self-correction), then explain

@@ -29,3 +29,6 @@ TOP_K_CHUNKS = 5
 
 # Self-correction: max retries for SQL execution
 MAX_SQL_RETRIES = 2
+
+# Edit loop: max times user can decline and request changes before the agent stops (FR-2.5)
+MAX_EDIT_ATTEMPTS = 5
