@@ -1,6 +1,6 @@
 """
 Configuration for the Analytics AI Agent.
-Loads from .env and provides paths and settings.
+Loads from .env locally and from st.secrets on Streamlit Cloud.
 """
 import os
 from pathlib import Path
@@ -12,8 +12,19 @@ load_dotenv()
 # Base directory: where this package lives (AI Agent folder)
 BASE_DIR = Path(__file__).resolve().parent
 
+
+def _get_secret(key: str) -> str | None:
+    """Read from st.secrets (Streamlit Cloud) with fallback to environment variables."""
+    try:
+        import streamlit as st
+        return st.secrets.get(key)
+    except Exception:
+        pass
+    return os.getenv(key)
+
+
 # OpenAI
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = _get_secret("OPENAI_API_KEY") #or os.getenv("OPENAI_API_KEY")
 EMBEDDING_MODEL = "text-embedding-3-small"
 CHAT_MODEL = "gpt-4o-mini"
 
