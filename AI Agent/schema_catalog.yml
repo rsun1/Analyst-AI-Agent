@@ -267,6 +267,51 @@ relationships:
   - from: "leads_closed.seller_id"
     to: "sellers.seller_id"
 
+# Multi-hop cross-domain join paths
+# These document how to traverse BETWEEN business domains (orders ↔ leads, etc.).
+# There is NO direct join between orders and leads tables — sellers is the bridge entity.
+# Always use these paths when a question spans multiple domains.
+
+cross_domain_paths:
+  - name: "orders_to_leads"
+    description: >
+      Sellers appear in both the orders domain (via order_items) and the leads domain
+      (via leads_closed). To connect orders to leads you MUST go through sellers.
+      There is NO direct join from orders or customers to leads_qualified or leads_closed.
+    path: "orders -> order_items (order_id) -> leads_closed (seller_id) -> leads_qualified (mql_id)"
+    example_use: >
+      'How many leads were generated from orders placed in a given period?'
+      Join orders to order_items on order_id, then order_items to leads_closed on seller_id,
+      then leads_closed to leads_qualified on mql_id.
+      Apply date and customer_state filters on the orders/customers side.
+
+  - name: "orders_to_seller_leads_with_customer_filter"
+    description: >
+      When filtering by customer state AND linking to leads, you need BOTH the customer
+      join (for state) and the seller-lead join path. customers does not join to leads.
+    path: "orders -> customers (customer_id) [for state filter] + orders -> order_items (order_id) -> leads_closed (seller_id) -> leads_qualified (mql_id)"
+    example_use: >
+      'How many leads came from orders placed by customers in SP, BA, MA?'
+      JOIN customers for the state filter, JOIN order_items then leads_closed then leads_qualified
+      for the lead count. Use DISTINCT on mql_id or seller_id to avoid duplicates.
+
+  - name: "orders_to_products_to_category"
+    description: >
+      To get English product category names, you must go through
+      product_category_name_translation. Products only store the Portuguese name.
+    path: "order_items -> products (product_id) -> product_category_name_translation (product_category_name)"
+    example_use: >
+      'Revenue by product category in English?'
+      Join order_items to products on product_id, then products to
+      product_category_name_translation on product_category_name.
+
+  - name: "leads_to_seller_orders"
+    description: >
+      To find orders placed by sellers who are in the leads pipeline (reverse direction).
+    path: "leads_qualified -> leads_closed (mql_id) -> order_items (seller_id) -> orders (order_id)"
+    example_use: >
+      'What is the order volume from sellers who converted from leads?'
+
 # Common pitfalls — mistakes the model must avoid
 pitfalls:
   - "Join to customers using orders.customer_id = customers.customer_id, NOT customer_unique_id."
@@ -274,3 +319,6 @@ pitfalls:
   - "The column names product_name_lenght and product_description_lenght are intentionally misspelled in the database — use exactly these spellings."
   - "All date columns are TEXT. Use strftime('%Y-%m', col) to group by month, julianday() for day differences."
   - "order_payments can have multiple rows per order_id. Use SUM(payment_value) and GROUP BY order_id before joining to avoid row multiplication."
+  - "There is NO direct join between orders/customers and leads_qualified/leads_closed. The only bridge is seller_id: orders -> order_items -> leads_closed -> leads_qualified."
+  - "Do NOT join leads_qualified to orders on a date or NULL condition. leads_qualified has no order_id column."
+  - "When counting leads linked to orders, use COUNT(DISTINCT lq.mql_id) or COUNT(DISTINCT lc.seller_id) to avoid row multiplication from multiple items per order."

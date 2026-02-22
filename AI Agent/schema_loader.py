@@ -73,6 +73,21 @@ def render_schema_block(path: str | None = None) -> str:
             lines.append(f"  {r['from']}  →  {r['to']}")
         lines.append("")
 
+    cross_domain: list = catalog.get("cross_domain_paths", [])
+    if cross_domain:
+        lines.append("CROSS-DOMAIN JOIN PATHS (multi-hop paths between business domains):")
+        lines.append("  WARNING: Never join orders/customers directly to leads tables. Always use the seller bridge.")
+        lines.append("")
+        for cdp in cross_domain:
+            lines.append(f"  PATH: {cdp.get('name', '')}")
+            desc = str(cdp.get("description", "")).strip().replace("\n", " ")
+            lines.append(f"    Description: {desc}")
+            lines.append(f"    Traversal:   {cdp.get('path', '')}")
+            example = str(cdp.get("example_use", "")).strip().replace("\n", " ")
+            if example:
+                lines.append(f"    Example use: {example}")
+            lines.append("")
+
     pitfalls: list = catalog.get("pitfalls", [])
     if pitfalls:
         lines.append("COMMON PITFALLS (avoid these mistakes):")

@@ -317,6 +317,110 @@ LIMIT 10;
 
 ---
 
+## 8. Cross-domain: Orders ↔ Leads (via sellers)
+
+**Key concept:** Sellers are the bridge entity between the orders domain and the leads domain. There is NO direct join between `orders` (or `customers`) and `leads_qualified` / `leads_closed`. The correct multi-hop path is:
+
+`orders → order_items (order_id) → leads_closed (seller_id) → leads_qualified (mql_id)`
+
+Use `customers` on the orders side only for filtering by customer attributes (e.g. state). Never join `customers` or `leads_qualified` directly to each other.
+
+### definition: leads_generated_from_orders_by_period_and_state
+
+Count of distinct leads (MQLs) whose sellers had orders placed by customers from specific states within a given time window. Also returns total leads ever contacted (all-time count from leads_qualified, no filter). This is the canonical cross-domain query pattern for "how many leads came from orders in period X from states Y?".
+
+### SQL query
+
+```sql
+-- Part 1: leads generated from orders in the period, from customers in given states
+-- Path: orders -> customers (state filter) + orders -> order_items -> leads_closed -> leads_qualified
+SELECT
+  COUNT(DISTINCT lq.mql_id) AS leads_generated
+FROM orders o
+JOIN customers c    ON c.customer_id  = o.customer_id
+JOIN order_items oi ON oi.order_id    = o.order_id
+JOIN leads_closed lc ON lc.seller_id  = oi.seller_id
+JOIN leads_qualified lq ON lq.mql_id  = lc.mql_id
+WHERE o.order_purchase_timestamp BETWEEN '2017-07-01' AND '2017-08-31'
+  AND c.customer_state IN ('BA', 'MA', 'SP');
+
+-- Part 2: total leads ever contacted (all-time, no date or state filter)
+SELECT COUNT(DISTINCT mql_id) AS total_leads_contacted
+FROM leads_qualified;
+```
+
+---
+
+### definition: leads_generated_and_contacted_combined
+
+Single query that returns both the filtered lead count (orders in a period, customers from given states) and the all-time total leads contacted side by side. Uses a subquery for the all-time total so both numbers appear in one result row.
+
+### SQL query
+
+```sql
+SELECT
+  COUNT(DISTINCT lq.mql_id) AS leads_generated,
+  (SELECT COUNT(DISTINCT mql_id) FROM leads_qualified) AS total_leads_contacted_ever
+FROM orders o
+JOIN customers c     ON c.customer_id  = o.customer_id
+JOIN order_items oi  ON oi.order_id    = o.order_id
+JOIN leads_closed lc ON lc.seller_id   = oi.seller_id
+JOIN leads_qualified lq ON lq.mql_id   = lc.mql_id
+WHERE o.order_purchase_timestamp BETWEEN '2017-07-01' AND '2017-08-31'
+  AND c.customer_state IN ('BA', 'MA', 'SP');
+```
+
+---
+
+### definition: seller_order_volume_with_lead_status
+
+For each seller who had orders in a given period, show their order count, total revenue, and whether they appear in the leads pipeline (converted or not). Useful for understanding overlap between active sellers and the MQL funnel.
+
+### SQL query
+
+```sql
+SELECT
+  oi.seller_id,
+  COUNT(DISTINCT o.order_id)   AS order_count,
+  SUM(op.payment_value)        AS total_revenue,
+  CASE WHEN lc.seller_id IS NOT NULL THEN 'in_leads' ELSE 'not_in_leads' END AS lead_status
+FROM orders o
+JOIN order_items oi   ON oi.order_id  = o.order_id
+JOIN order_payments op ON op.order_id = o.order_id
+LEFT JOIN leads_closed lc ON lc.seller_id = oi.seller_id
+WHERE o.order_purchase_timestamp BETWEEN '2017-01-01' AND '2017-12-31'
+GROUP BY oi.seller_id, lead_status
+ORDER BY total_revenue DESC;
+```
+
+---
+
+### definition: lead_conversion_rate_by_customer_state
+
+Conversion rate (leads_qualified → leads_closed) broken down by the customer state of the orders those sellers fulfilled. Shows which geographic markets have the highest seller conversion rates.
+
+### SQL query
+
+```sql
+SELECT
+  c.customer_state,
+  COUNT(DISTINCT lq.mql_id)  AS total_leads_qualified,
+  COUNT(DISTINCT lc.mql_id)  AS leads_closed_count,
+  ROUND(
+    100.0 * COUNT(DISTINCT lc.mql_id) / NULLIF(COUNT(DISTINCT lq.mql_id), 0),
+    2
+  ) AS conversion_pct
+FROM orders o
+JOIN customers c     ON c.customer_id  = o.customer_id
+JOIN order_items oi  ON oi.order_id    = o.order_id
+JOIN leads_closed lc ON lc.seller_id   = oi.seller_id
+JOIN leads_qualified lq ON lq.mql_id   = lc.mql_id
+GROUP BY c.customer_state
+ORDER BY conversion_pct DESC;
+```
+
+---
+
 ## Reference: main relationships
 
 | From table    | To table     | Join key(s)                          |
@@ -329,5 +433,8 @@ LIMIT 10;
 | order_items   | sellers     | `order_items.seller_id` = `sellers.seller_id`  |
 | products      | product_category_name_translation | `products.product_category_name` = `...product_category_name` |
 | leads_qualified | leads_closed | `leads_closed.mql_id` = `leads_qualified.mql_id` |
+| leads_closed    | sellers      | `leads_closed.seller_id` = `sellers.seller_id` — **this is the bridge between orders and leads** |
 
 All date/datetime fields are stored as text; use `strftime` and `julianday` in SQLite for filtering and grouping by time.
+
+**Cross-domain bridge (critical):** There is NO direct join between `orders`/`customers` and `leads_qualified`/`leads_closed`. To connect them, always traverse: `orders → order_items (order_id) → leads_closed (seller_id) → leads_qualified (mql_id)`. The seller is the entity that exists in both domains.
