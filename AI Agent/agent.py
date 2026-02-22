@@ -1,18 +1,22 @@
 """
 Analytics AI Agent: CLI flow.
 Ask question → RAG → propose SQL + explanation → approve/edit loop → execute → insights.
+
+All business logic lives in agent_core.py and is shared with the Streamlit UI (app.py).
+This module only handles CLI I/O.
 """
-import sqlite3
 import sys
 
-from config import MAX_EDIT_ATTEMPTS, MAX_SQL_RETRIES, OLIST_DB_PATH
-from db import execute_query
-from insights import explain_results
-from rag import retrieve
+from agent_core import (
+    UNCLEAR_INSTRUCTION,
+    step_execute,
+    step_explain,
+    step_generate,
+    step_rag,
+    step_revise,
+)
+from config import MAX_EDIT_ATTEMPTS
 from schema_loader import validate_catalog_against_db
-from sql_correction import get_corrected_sql
-from sql_errors import classify_sqlite_error
-from sql_generator import UNCLEAR_INSTRUCTION, generate_sql_and_explanation, revise_sql
 
 
 def print_table(columns: list[str], rows: list[tuple], max_display: int = 50) -> None:
@@ -55,10 +59,10 @@ def run_agent_loop(question: str | None = None) -> None:
         print("No question entered. Exiting.")
         return
 
-    # Phase 2: Retrieve context and generate SQL + explanation
+    # Phase 2: Retrieve context and generate SQL + explanation.
     print("\nRetrieving relevant schema context...")
     try:
-        rag_context = retrieve(q)
+        rag_context = step_rag(q)
     except FileNotFoundError as e:
         print(f"Error: {e}")
         print("Run ingestion first: python -m ingest")
@@ -69,7 +73,7 @@ def run_agent_loop(question: str | None = None) -> None:
 
     print("Generating SQL and explanation...")
     try:
-        sql, explanation = generate_sql_and_explanation(q, rag_context)
+        sql, explanation = step_generate(q, rag_context)
     except Exception as e:
         print(f"Error generating SQL: {e}")
         return
@@ -78,7 +82,7 @@ def run_agent_loop(question: str | None = None) -> None:
         print("No SQL was generated. Please rephrase your question.")
         return
 
-    # Phase 2 – approve / edit loop (FR-2.5, FR-2.6)
+    # Phase 2 – approve / edit loop (FR-2.5, FR-2.6).
     _show_proposed(sql, explanation)
     approved = False
     for edit_attempt in range(MAX_EDIT_ATTEMPTS):
@@ -88,7 +92,7 @@ def run_agent_loop(question: str | None = None) -> None:
             approved = True
             break
 
-        # User declined — ask what to change
+        # User declined — ask what to change.
         while True:
             instruction = input("What needs to be changed? ").strip()
             if not instruction:
@@ -101,15 +105,20 @@ def run_agent_loop(question: str | None = None) -> None:
 
             print("Revising SQL...")
             try:
-                revised_sql, revised_explanation = revise_sql(
-                    sql, explanation, instruction, rag_context
+                revised_sql, revised_explanation = step_revise(
+                    original_question=q,
+                    rag_context=rag_context,
+                    current_sql=sql,
+                    current_explanation=explanation,
+                    revision_instruction=instruction,
+                    last_db_error=None,
                 )
             except Exception as e:
                 print(f"Error revising SQL: {e}")
                 break
 
             if revised_sql == UNCLEAR_INSTRUCTION:
-                # FR-2.6: ambiguous instruction — do not count as an attempt
+                # FR-2.6: ambiguous instruction — do not count as an attempt.
                 print("Unclear instruction. Can you please rephrase.")
                 continue
 
@@ -117,46 +126,20 @@ def run_agent_loop(question: str | None = None) -> None:
             sql, explanation = revised_sql, revised_explanation
             _show_proposed(sql, explanation)
             break
-        else:
-            # inner while broke via error path — fall through to next edit_attempt
-            pass
 
     if not approved:
         print(f"Too many attempts ({MAX_EDIT_ATTEMPTS}). Exiting without executing.")
         return
 
-    # Phase 3: Execute (with self-correction), then explain
-    current_sql = sql
-    last_error: str | None = None
-    for attempt in range(MAX_SQL_RETRIES + 1):
-        try:
-            columns, rows = execute_query(current_sql)
-            break
-        except sqlite3.OperationalError as e:
-            last_error = str(e)
-            classified = classify_sqlite_error(e)
-            if attempt < MAX_SQL_RETRIES:
-                print(f"\nQuery failed ({classified.kind}): {last_error}")
-                print("Requesting corrected SQL from model...")
-                try:
-                    current_sql = get_corrected_sql(
-                        current_sql, last_error, rag_context, classified=classified
-                    )
-                    print("Retrying with corrected query...")
-                except Exception as fix_err:
-                    print(f"Correction failed: {fix_err}")
-                    break
-            else:
-                print(f"\nExecution failed after {MAX_SQL_RETRIES + 1} attempt(s): {last_error}")
-                return
-        except FileNotFoundError as e:
-            print(f"Database not found: {e}")
-            return
-        except Exception as e:
-            print(f"Error: {e}")
-            return
-    else:
-        print(f"Execution failed: {last_error}")
+    # Phase 3: Execute (with self-correction), then explain.
+    try:
+        print("\nExecuting query...")
+        columns, rows = step_execute(sql, rag_context)
+    except FileNotFoundError as e:
+        print(f"Database not found: {e}")
+        return
+    except Exception as e:
+        print(f"\nExecution failed: {e}")
         return
 
     print("\n--- Results ---")
@@ -164,7 +147,7 @@ def run_agent_loop(question: str | None = None) -> None:
 
     print("\n--- Summary & insights ---")
     try:
-        summary = explain_results(q, current_sql, columns, rows)
+        summary = step_explain(q, sql, columns, rows)
         print(summary)
     except Exception as e:
         print(f"Could not generate insights: {e}")

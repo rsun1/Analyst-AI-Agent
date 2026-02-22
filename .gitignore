@@ -39,6 +39,11 @@ Thumbs.db
 *.sqlite3
 *.db
 
+# Analytics AI Agent generated artifacts
+embeddings_store.json
+
 # Logs and temp
 *.log
 .cache/
+
+query_log.jsonl
