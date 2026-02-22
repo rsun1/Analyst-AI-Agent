@@ -40,7 +40,7 @@ Thumbs.db
 *.db
 
 # Analytics AI Agent generated artifacts
-embeddings_store.json
+# embeddings_store.json is intentionally tracked (needed for RAG on Streamlit Cloud)
 
 # Logs and temp
 *.log
