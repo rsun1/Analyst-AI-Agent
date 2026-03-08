@@ -24,7 +24,140 @@ st.set_page_config(
     page_title="Olist Data Analyst AI",
     page_icon="🔍",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
+
+# ── Custom styling ─────────────────────────────────────────────────────────────
+
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* ── Global font & reset ── */
+html, body, [class*="css"] {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+
+/* ── Restore Material icon fonts (global override breaks them) ── */
+.material-symbols-rounded,
+.material-symbols-outlined,
+.material-icons,
+span[class*="material-symbols"],
+span[class*="material-icons"] {
+    font-family: 'Material Symbols Rounded', 'Material Symbols Outlined', 'Material Icons' !important;
+}
+
+/* ── Hide Streamlit chrome ── */
+#MainMenu { visibility: hidden; }
+footer    { visibility: hidden; }
+
+/* ── Main container ── */
+.main .block-container {
+    padding-top: 0.5rem !important;
+    padding-bottom: 3rem !important;
+    max-width: 880px !important;
+}
+
+/* ── Sidebar ── */
+section[data-testid="stSidebar"] {
+    border-right: 1px solid #D0D5ED !important;
+}
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] .stMarkdown h1 {
+    font-size: 1.1rem !important;
+    font-weight: 700 !important;
+    color: #4F6EF7 !important;
+    letter-spacing: -0.01em !important;
+}
+
+/* ── Chat message bubbles ── */
+div[data-testid="stChatMessage"] {
+    border-radius: 14px !important;
+    padding: 1rem 1.25rem !important;
+    margin-bottom: 0.625rem !important;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06) !important;
+    border: 1px solid rgba(208, 213, 237, 0.6) !important;
+    background: #ffffff !important;
+}
+
+/* ── Code blocks ── */
+pre, code {
+    border-radius: 10px !important;
+}
+.stCode > div, [data-testid="stCode"] > div {
+    background-color: #1a1d2e !important;
+    border-radius: 10px !important;
+}
+[data-testid="stCode"] pre {
+    background-color: #1a1d2e !important;
+    color: #cdd6f4 !important;
+    font-size: 0.83rem !important;
+    line-height: 1.6 !important;
+}
+
+/* ── Buttons ── */
+.stButton > button {
+    border-radius: 10px !important;
+    font-weight: 500 !important;
+    font-size: 0.875rem !important;
+    padding: 0.45rem 1.1rem !important;
+    transition: all 0.15s ease !important;
+}
+.stButton > button:hover {
+    box-shadow: 0 4px 14px rgba(79, 110, 247, 0.3) !important;
+    transform: translateY(-1px) !important;
+}
+.stButton > button[kind="primary"] {
+    background-color: #4F6EF7 !important;
+    border-color: #4F6EF7 !important;
+}
+
+/* ── Text areas & inputs ── */
+.stTextArea > div > textarea,
+.stTextInput > div > div > input {
+    border-radius: 10px !important;
+    border: 1.5px solid #C5CAEC !important;
+    font-size: 0.9rem !important;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+}
+.stTextArea > div > textarea:focus,
+.stTextInput > div > div > input:focus {
+    border-color: #4F6EF7 !important;
+    box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.15) !important;
+}
+
+/* ── Dataframe / table ── */
+.stDataFrame, [data-testid="stDataFrame"] {
+    border-radius: 10px !important;
+    overflow: hidden !important;
+    border: 1px solid #D8DCF0 !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* ── Expanders ── */
+[data-testid="stExpander"] {
+    border: 1px solid #D8DCF0 !important;
+    border-radius: 12px !important;
+    margin-bottom: 0.5rem !important;
+    overflow: hidden !important;
+}
+.streamlit-expanderHeader {
+    font-weight: 600 !important;
+    background: #F0F3FF !important;
+}
+
+/* ── Alert boxes ── */
+[data-testid="stAlert"], div[role="alert"] {
+    border-radius: 10px !important;
+}
+
+/* ── Chat input bar ── */
+[data-testid="stChatInputTextArea"] textarea {
+    border-radius: 12px !important;
+    font-size: 0.9rem !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ── Session state init ─────────────────────────────────────────────────────────
 
@@ -60,24 +193,24 @@ if st.session_state["_schema_warnings"] is None:
 with st.sidebar:
     st.title("🔍 Olist Data Analyst AI")
     st.markdown(
-        "A Data Analyst AI Agent connected to the **Olist Brazilian e-commerce database** — "
+        "A Data Analyst AI Agent connected to the **Olist Brazilian 2017-2018 e-commerce database** — "
         "covering orders, customers, sellers, products, payments, and reviews.\n\n"
         "Ask questions in plain English. The agent proposes SQL, shows its reasoning, "
         "and asks for approval before running anything."
     )
 
     st.divider()
-    st.subheader("Example questions")
+    st.subheader("Try an example")
     examples = [
-        "What was the GMV per month in 2018?",
-        "Top 10 sellers by total revenue",
-        "Average review score by product category",
-        "Analyze our seller performance",
-        "How do late deliveries affect customer review scores?",
+        ("📈 GMV by month", "What was the GMV per month in 2018?"),
+        ("🏆 Top sellers", "Top 10 sellers by total revenue"),
+        ("⭐ Review scores", "Average review score by product category"),
+        ("🔍 Seller perf.", "Analyze our seller performance"),
+        ("🚚 Late deliveries", "How do late deliveries affect customer review scores?"),
     ]
-    for ex in examples:
-        if st.button(ex, key=f"ex_{ex[:20]}", use_container_width=True):
-            st.session_state["_prefill"] = ex
+    for i, (label, question) in enumerate(examples):
+        if st.button(label, key=f"ex_{i}", help=question, use_container_width=True):
+            st.session_state["_prefill"] = question
 
     st.divider()
     st.subheader("⚙️ Session")
@@ -106,6 +239,9 @@ with st.sidebar:
         st.warning("Schema drift detected:\n" + "\n".join(st.session_state["_schema_warnings"]))
 
 
+ASSISTANT_AVATAR = "🔍"
+USER_AVATAR = "👤"
+
 # ── Event renderer ─────────────────────────────────────────────────────────────
 
 def render_event(event: dict) -> None:
@@ -113,20 +249,20 @@ def render_event(event: dict) -> None:
     t = event["type"]
 
     if t == "welcome":
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
             st.markdown(event["content"])
 
     elif t == "user_question":
-        with st.chat_message("user"):
+        with st.chat_message("user", avatar=USER_AVATAR):
             st.markdown(event["content"])
 
     elif t == "proposed_sql":
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
             st.markdown(f"**Reason:** {event['reason']}")
             st.code(event["sql"], language="sql")
 
     elif t == "results":
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
             import pandas as pd
             df = pd.DataFrame(event["rows"], columns=event["columns"])
             st.dataframe(df, use_container_width=True)
@@ -139,31 +275,31 @@ def render_event(event: dict) -> None:
     elif t == "chart":
         fig = detect_chart(event["columns"], event["rows"])
         if fig is not None:
-            with st.chat_message("assistant"):
+            with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
                 st.plotly_chart(fig, use_container_width=True)
 
     elif t == "insights":
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
             st.markdown(event["content"])
 
     elif t == "user_edit":
-        with st.chat_message("user"):
+        with st.chat_message("user", avatar=USER_AVATAR):
             st.markdown(f"✏️ *{event['content']}*")
 
     elif t == "error":
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
             st.error(event["content"])
 
     elif t == "warning":
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
             st.warning(event["content"])
 
     elif t == "multi_query_start":
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
             st.markdown(f"Running a multi-part analysis for: **{event['question']}**")
 
     elif t == "multi_query_subresult":
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
             label = f"{'✅' if not event.get('error') else '❌'} Sub-analysis {event['index']}: {event['sub_question']}"
             with st.expander(label, expanded=False):
                 if event.get("error"):
@@ -181,8 +317,33 @@ def render_event(event: dict) -> None:
                             st.plotly_chart(fig, use_container_width=True)
 
     elif t == "multi_query_report":
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
             st.markdown(event["markdown"])
+
+
+# ── Page header banner ─────────────────────────────────────────────────────────
+
+st.markdown("""
+<div style="
+    background: linear-gradient(135deg, #4F6EF7 0%, #7B96FF 100%);
+    border-radius: 16px;
+    padding: 1.25rem 1.75rem;
+    margin-bottom: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+">
+    <span style="font-size: 2rem; line-height: 1;">🔍</span>
+    <div>
+        <div style="color: white; font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; margin: 0;">
+            Olist Data Analyst
+        </div>
+        <div style="color: rgba(255,255,255,0.8); font-size: 0.85rem; margin-top: 2px;">
+            Ask questions in plain English &mdash; get SQL, charts, and insights
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 
 # ── Reconstruct history at the top of every rerun ─────────────────────────────
@@ -228,7 +389,7 @@ def _append(event: dict) -> None:
 if _flow()["state"] == "AWAITING_APPROVAL":
     flow = _flow()
 
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
         edited_sql = st.text_area(
             "Edit SQL if needed, then click Run:",
             value=flow["sql"],
@@ -268,7 +429,7 @@ if _flow()["state"] == "AWAITING_REVISION_INSTRUCTION":
         _set_flow(state="AWAITING_APPROVAL")
         st.rerun()
 
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
         instruction = st.text_input(
             "What should change?",
             key="revision_input",
