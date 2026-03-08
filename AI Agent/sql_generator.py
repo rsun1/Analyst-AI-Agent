@@ -42,6 +42,9 @@ Rules:
 - Use ONLY the FK relationships listed above for JOIN conditions.
 - Generate valid SQLite SQL (strftime for date grouping, julianday for date differences).
 - Output exactly one SQL query and a short explanation.
+- If a CONVERSATION HISTORY block is present in the user message, use it to understand
+  follow-up references (e.g. "break that down", "now filter by..."). If the current
+  question is unrelated to the history, ignore the history and generate SQL from scratch.
 {_RESPONSE_FORMAT}"""
 
 
@@ -95,20 +98,34 @@ def _parse_response(content: str) -> tuple[str, str]:
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
-def generate_sql_and_explanation(question: str, rag_context: list[str]) -> tuple[str, str]:
+def generate_sql_and_explanation(
+    question: str,
+    rag_context: list[str],
+    conversation_history: list[dict] | None = None,
+) -> tuple[str, str]:
     """
     Generate a SQLite query and explanation for the given question.
 
     The system prompt always contains the full schema catalog (ground truth).
     The user message adds RAG-retrieved metric definitions and query patterns.
+    When conversation_history is provided, prior turns are prepended so the
+    model understands follow-up references.
     Returns (sql_query, explanation).
     """
     if not OPENAI_API_KEY:
         raise ValueError("OPENAI_API_KEY is not set in .env")
 
+    from conversation import build_history_block, trim_history  # local import avoids circular deps
+
     context_block = "\n\n---\n\n".join(rag_context) if rag_context else "(No sample queries retrieved.)"
 
-    user_content = f"""Relevant metric definitions and sample queries (for query pattern guidance):
+    history_block = ""
+    if conversation_history:
+        history_block = build_history_block(trim_history(conversation_history))
+
+    history_prefix = f"{history_block}\n\n" if history_block else ""
+
+    user_content = f"""{history_prefix}Relevant metric definitions and sample queries (for query pattern guidance):
 
 {context_block}
 

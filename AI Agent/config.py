@@ -35,3 +35,14 @@ MAX_SQL_RETRIES = 2
 
 # Edit loop: max times user can decline and request changes before the agent stops (FR-2.5)
 MAX_EDIT_ATTEMPTS = 5
+
+# Multi-turn conversation: max history entries passed to LLM (3 user + 3 assistant = 6)
+MAX_HISTORY_TURNS = 6
+
+# Multi-query analysis
+MULTI_QUERY_DOMAIN_CONTEXT = (
+    "Olist Brazilian e-commerce database covering orders, customers, sellers, "
+    "products, payments, reviews, and marketing leads"
+)
+MAX_SUB_QUESTIONS = 5
+MIN_SUB_QUESTIONS = 2
