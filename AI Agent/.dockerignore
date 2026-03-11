@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+.git/
+.gitignore
+.devcontainer/
+tests/
+*.md
+!olist_schema_queries.md
+query_log.jsonl
