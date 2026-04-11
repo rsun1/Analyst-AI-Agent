@@ -8,9 +8,24 @@ from config import MAX_SQL_RETRIES
 from db import execute_query
 from insights import explain_results
 from rag import retrieve
+from schema_loader import render_live_schema_block
 from sql_correction import get_corrected_sql
 from sql_errors import classify_sqlite_error
 from sql_generator import UNCLEAR_INSTRUCTION, generate_sql_and_explanation, revise_sql
+
+
+def step_introspect_schema(db_path: str | None = None) -> str:
+    """
+    Introspect the live database and return a schema block for LLM injection.
+
+    Queries SQLite directly (via PRAGMA table_info) to get the ground-truth
+    table and column names, then enriches them with notes, enums, FK
+    relationships, cross-domain paths, and pitfalls from schema_catalog.yml.
+
+    The result is cached after the first call — SQLite schema is static at
+    runtime, so there is no cost to calling this repeatedly.
+    """
+    return render_live_schema_block(db_path)
 
 
 def step_rag(question: str) -> list[str]:

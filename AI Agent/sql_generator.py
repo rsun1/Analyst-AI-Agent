@@ -13,7 +13,7 @@ SQL accuracy strategy:
 from openai import OpenAI
 
 from config import CHAT_MODEL, OPENAI_API_KEY
-from schema_loader import render_schema_block
+from schema_loader import render_live_schema_block
 
 # ── Shared response format instructions ───────────────────────────────────────
 
@@ -31,8 +31,8 @@ SQL:
 # ── System prompts ─────────────────────────────────────────────────────────────
 
 def _build_system_prompt() -> str:
-    """Build the system prompt with the always-on schema catalog embedded."""
-    schema_block = render_schema_block()
+    """Build the system prompt with the live schema embedded."""
+    schema_block = render_live_schema_block()
     return f"""You are a SQL expert for the Olist Brazilian e-commerce SQLite database.
 
 {schema_block}
@@ -50,7 +50,7 @@ Rules:
 
 def _build_revise_system_prompt() -> str:
     """System prompt for the SQL revision (edit-loop) path."""
-    schema_block = render_schema_block()
+    schema_block = render_live_schema_block()
     return f"""You are a SQL expert for the Olist Brazilian e-commerce SQLite database.
 The user has reviewed a proposed SQLite query and requested a change.
 

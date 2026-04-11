@@ -20,6 +20,29 @@ def get_connection(db_path: str | Path | None = None):
     return sqlite3.connect(uri, uri=True)
 
 
+def get_live_schema(db_path: str | Path | None = None) -> dict[str, list[dict]]:
+    """
+    Query the live SQLite database for all tables and their columns.
+    Returns {table_name: [{"name": col_name, "type": col_type}, ...]}
+    ordered as the DB defines them.
+    """
+    conn = get_connection(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        )
+        tables = [row[0] for row in cur.fetchall()]
+        schema: dict[str, list[dict]] = {}
+        for table in tables:
+            cur.execute(f'PRAGMA table_info("{table}")')
+            schema[table] = [{"name": row[1], "type": row[2]} for row in cur.fetchall()]
+        return schema
+    finally:
+        conn.close()
+
+
 def execute_query(sql: str, db_path: str | Path | None = None) -> tuple[list[str], list[tuple]]:
     """
     Execute the given SQL (read-only) and return (column_names, rows).

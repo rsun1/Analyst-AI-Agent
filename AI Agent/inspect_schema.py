@@ -1,6 +1,8 @@
 import sqlite3
+from pathlib import Path
 
-conn = sqlite3.connect("olist.sqlite")
+_path = Path(__file__).parent / "olist.sqlite"
+conn = sqlite3.connect(f"file:{_path}?mode=ro", uri=True)
 cur = conn.cursor()
 cur.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
 tables = [t[0] for t in cur.fetchall()]

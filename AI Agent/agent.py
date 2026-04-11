@@ -9,6 +9,7 @@ from config import MAX_EDIT_ATTEMPTS, MAX_SQL_RETRIES, OLIST_DB_PATH
 from db import execute_query
 from insights import explain_results
 from rag import retrieve
+from agent_core import step_introspect_schema
 from schema_loader import validate_catalog_against_db
 from sql_correction import get_corrected_sql
 from sql_errors import classify_sqlite_error
@@ -171,6 +172,16 @@ def run_agent_loop(question: str | None = None) -> None:
 
 
 def main() -> None:
+    # Introspect live DB schema (cached for the session).
+    print("Loading live database schema...")
+    try:
+        schema_block = step_introspect_schema()
+        table_count = schema_block.count("\nTABLE: ")
+        print(f"Schema loaded: {table_count} table(s) read directly from the database.")
+    except Exception as e:
+        print(f"⚠  Could not load live schema: {e}")
+    print()
+
     # Validate schema catalog against live DB at startup; warn but do not crash.
     drift = validate_catalog_against_db()
     if drift:

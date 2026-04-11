@@ -11,7 +11,7 @@ Features:
 """
 import streamlit as st
 
-from agent_core import UNCLEAR_INSTRUCTION, step_explain, step_execute, step_generate, step_rag
+from agent_core import UNCLEAR_INSTRUCTION, step_explain, step_execute, step_generate, step_introspect_schema, step_rag
 from chart import detect_chart
 from conversation import append_assistant_turn, append_user_turn
 from logger import log_query_event
@@ -178,9 +178,18 @@ def _init_state() -> None:
         "last_db_error": None,
     })
     st.session_state.setdefault("_schema_warnings", None)
+    st.session_state.setdefault("_live_schema_tables", None)
 
 
 _init_state()
+
+# Introspect live DB schema once per session (result is module-level cached, so only one DB round-trip).
+if st.session_state["_live_schema_tables"] is None:
+    try:
+        schema_block = step_introspect_schema()
+        st.session_state["_live_schema_tables"] = schema_block.count("\nTABLE: ")
+    except Exception:
+        st.session_state["_live_schema_tables"] = 0
 
 # Run schema drift check once per session
 if st.session_state["_schema_warnings"] is None:
@@ -214,6 +223,11 @@ with st.sidebar:
 
     st.divider()
     st.subheader("⚙️ Session")
+    n_tables = st.session_state.get("_live_schema_tables") or 0
+    if n_tables:
+        st.caption(f"✅ Live schema: {n_tables} tables loaded from DB")
+    else:
+        st.caption("⚠️ Live schema unavailable")
     st.write(f"Queries run: **{st.session_state['queries_run']}**")
     st.write(f"Corrections made: **{st.session_state['corrections_made']}**")
     if st.button("🗑 Clear chat", use_container_width=True):

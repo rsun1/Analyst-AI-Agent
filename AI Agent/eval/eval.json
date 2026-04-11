@@ -1,0 +1,44 @@
+[
+  {
+    "id": "001",
+    "question": "How many orders were delivered successfully?",
+    "expected_sql": "SELECT COUNT(*) FROM orders WHERE order_status = 'delivered'",
+    "expected_answer": "96,478 orders were successfully delivered."
+  },
+  {
+    "id": "002",
+    "question": "What are the top 5 product categories by total revenue?",
+    "expected_sql": "SELECT p.product_category_name, SUM(oi.price) as revenue FROM order_items oi JOIN products p ON oi.product_id = p.product_id GROUP BY 1 ORDER BY 2 DESC LIMIT 5",
+    "expected_answer": "Top 5 categories ranked by total sales amount are:
+    1. 'beleza_saude', 1258681.34
+    2. 'relogios_presentes', 1205005.68
+    3. 'cama_mesa_banho', 1036988.68
+    4. 'esporte_lazer', 988048.97
+    5. 'informatica_acessorios', 911954.32
+    "
+  },
+  {
+    "id": "003",
+    "question": "What is the average review score by product category for the top 5 highest-selling categories?",
+    "expected_sql": "SELECT p.product_category_name, AVG(r.review_score) FROM order_reviews r JOIN orders o ON r.order_id = o.order_id JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id GROUP BY 1 ORDER BY 2 DESC",
+    "expected_answer": "Average review scores per category for the top 5 highest-selling categories are:
+1. 'cds_dvds_musicais', 4.642857142857143
+2.'fashion_roupa_infanto_juvenil', 4.5
+3.'livros_interesse_geral', 4.446265938069216
+4.'construcao_ferramentas_ferramentas', 4.444444444444445
+5.'flores', 4.419354838709677
+    "
+  },
+  {
+    "id": "004",
+    "question": "Which payment method is most commonly used?",
+    "expected_sql": "SELECT payment_type, COUNT(*) FROM order_payments GROUP BY 1 ORDER BY 2 DESC LIMIT 1",
+    "expected_answer": "Credit card is the most used payment method."
+  },
+  {
+    "id": "005",
+    "question": "What is the average delivery time in days?",
+    "expected_sql": "SELECT AVG(JULIANDAY(order_delivered_customer_date) - JULIANDAY(order_purchase_timestamp)) FROM orders WHERE order_delivered_customer_date IS NOT NULL",
+    "expected_answer": "Average delivery time is approximately 12.5 days."
+  }
+]

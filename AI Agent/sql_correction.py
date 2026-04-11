@@ -6,7 +6,7 @@ The schema catalog is always injected so the model uses only exact column/table 
 from openai import OpenAI
 
 from config import CHAT_MODEL, OPENAI_API_KEY
-from schema_loader import render_schema_block
+from schema_loader import render_live_schema_block
 from sql_errors import ClassifiedError, classify_sqlite_error
 
 CORRECTION_PROMPT = """The following SQLite query failed.
@@ -23,7 +23,7 @@ Output nothing but the SQL, optionally inside a ```sql code block. Do not explai
 
 
 def _build_correction_system_prompt(emphasize_schema: bool = False) -> str:
-    schema_block = render_schema_block()
+    schema_block = render_live_schema_block()
     base = (
         "You fix SQLite errors. "
         + ("The database reported a missing column or table. " if emphasize_schema else "")
