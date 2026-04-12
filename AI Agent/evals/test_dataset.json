@@ -1,0 +1,158 @@
+[
+  {
+    "id": "001",
+    "question": "How many orders were delivered successfully?",
+    "expected_sql": "SELECT COUNT(*) FROM orders WHERE order_status = 'delivered'",
+    "expected_answer_english": "96,478 orders were successfully delivered.",
+    "eval_type": "answer_verification",
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+  },
+  {
+    "id": "002",
+    "question": "What are the top 5 product categories by total revenue?",
+    "expected_sql": "SELECT p.product_category_name_english, SUM(oi.price) as revenue FROM order_items oi JOIN products p ON oi.product_id = p.product_id JOIN product_category_name_translation pct ON p.product_category_name = pct.product_category_name GROUP BY 1 ORDER BY 2 DESC LIMIT 5",
+    "expected_answer_english": "Top 5 categories ranked by total sales amount are:\n1. 'beauty_health', 1258681.34\n2. 'watches_gifts', 1205005.68\n3. 'bed_bath_table', 1036988.68\n4. 'sports_leisure', 988048.97\n5. 'computers_accessories', 911954.32"  ,
+    "eval_type": "answer_verification",
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer."},
+  {
+    "id": "003",
+    "question": "What is the average review score by product category for the top 5 highest-selling categories?",
+    "expected_sql": "SELECT p.product_category_name_english, AVG(r.review_score) FROM order_reviews r JOIN orders o ON r.order_id = o.order_id JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id JOIN product_category_name_translation pct ON p.product_category_name = pct.product_category_name GROUP BY 1 ORDER BY 2 DESC",
+    "expected_answer_english": "Average review scores per category for the top 5 highest-selling categories are:\n1. 'cds_dvds_musicals', 4.642857142857143\n2. 'fashion_childrens_clothes', 4.5\n3. 'books_general_interest', 4.446265938069216\n4. 'construction_tools_tools', 4.444444444444445\n5. 'flowers', 4.419354838709677",
+    "eval_type": "answer_verification",
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer."  },
+  {
+    "id": "004",
+    "question": "Which payment method is most commonly used?",
+    "expected_sql": "SELECT payment_type, COUNT(*) FROM order_payments GROUP BY 1 ORDER BY 2 DESC LIMIT 1",
+    "expected_answer_english": "Credit card is the most used payment method.",
+    "eval_type": "answer_verification",
+    "eval_criteria": "Agent's answer should be the same as the expected answer."
+  },
+  {
+    "id": "005",
+    "question": "What is the average delivery time in days?",
+    "expected_sql": "SELECT AVG(JULIANDAY(order_delivered_customer_date) - JULIANDAY(order_purchase_timestamp)) FROM orders WHERE order_delivered_customer_date IS NOT NULL",
+    "expected_answer_english": "Average delivery time is approximately 12.5 days.",
+    "eval_type": "answer_verification",
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+  },
+  {
+    "id": "006",
+    "question": "Which state has the highest number of customers?",
+    "expected_sql": "SELECT customer_state, COUNT(*) FROM customers GROUP BY 1 ORDER BY 2 DESC LIMIT 1",
+    "expected_answer_english": "The state with the highest number of customers is São Paulo (SP).",
+    "eval_type": "answer_verification",
+    "eval_criteria": "Agent's answer should be the same as the expected answer."
+  },
+  {
+    "id": "007",
+    "question": "What is the total revenue generated from orders placed in 2017?",
+    "expected_sql": "SELECT SUM(price) FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.order_purchase_timestamp BETWEEN '2017-01-01' AND '2017-12-31'",
+    "expected_answer_english": "Total revenue generated from orders placed in 2017 is approximately 6.15 million Brazilian Reais.",
+    "eval_type": "answer_verification",
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+  },
+  {
+    "id": "008",
+    "question": "What are the top 10 sellers'(based on their number of orders) average review scores?",
+    "expected_sql": "SELECT sellers.seller_id, AVG(order_reviews.review_score) AS avg_review_score, SUM(order_items.price) AS total_sales, COUNT(orders.order_id) AS num_orders FROM sellers LEFT JOIN order_items ON sellers.seller_id = order_items.seller_id LEFT JOIN orders ON order_items.order_id = orders.order_id LEFT JOIN order_reviews ON orders.order_id = order_reviews.order_id GROUP BY  sellers.seller_id ORDER BY num_orders DESC LIMIT 10",
+    "expected_answer_english": "Here are the top 10 sellers (based on number of orders) and their average review scores:\n1. '6560211a19b47992c3666cc44a7e94c0', 3.9094059405940595, 123585.82, 2039\n2. '4a3ca9315b744ce9f8e9374361493884', 3.803931451612903\n3. '1f50f920176fa81dab994f9023523100', 3.9824016563147\n4. 'cc419e0650a3c5ba77189a1882b7556a', 4.0695748205411375\n5. 'da8622b14eb17ae2831f4ac5b9dab84a', 4.071428571428571\n6. '955fee9216a65b617aa5c0531780ce60', 4.0517125587642715\n7. '1025f0e2d44d7041d6cf58b6550e0bfa', 3.8497554157931515\n8. '7c67e1448b00f6e969d365cea6b010ab', 3.348207754206291\n9. 'ea8482cd71df3c1969d7b9473ff13abc', 3.953216374269006\n10. '7a67c85e85bb2ce8582c35f2203ad736', 4.234991423670669",
+    "eval_type": "answer_verification",
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+  },
+  {
+    "id": "009",
+    "question": "What is the average price of products in the 'electronics' category?",
+    "expected_sql": "SELECT AVG(price) FROM products p JOIN product_category_name_translation pct ON p.product_category_name = pct.product_category_name JOIN order_items oi ON oi.product_id = p.product_id WHERE pct.product_category_name_english = 'electronics'",
+    "expected_answer_english": "The average price of products in the 'electronics' category is approximately 57.9 Brazilian Reais.",
+    "eval_type": "answer_verification",
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+  },
+  {
+    "id": "010",
+    "question": "How many orders were delivered successfully in July 2017, and is that more or less than the previous month?",
+    "expected_sql": "SELECT strftime('%Y-%m', order_purchase_timestamp) AS order_month, COUNT(*) AS order_count FROM orders WHERE order_status = 'delivered' AND order_purchase_timestamp BETWEEN '2017-06-01' AND '2017-07-31' GROUP BY order_month ORDER BY order_month",
+    "expected_answer_english": "In July 2017, successfully delivered orders were 3729, higher than in June 2017.",
+    "eval_type": "answer_verification",
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+  },
+  {
+    "id": "011",
+    "question": "What is the distribution of review scores for products in the 'books_general_interest' category?",
+    "expected_sql": "SELECT review_score, COUNT(*) FROM order_reviews r JOIN orders o ON r.order_id = o.order_id JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id JOIN product_category_name_translation pct ON p.product_category_name = pct.product_category_name WHERE pct.product_category_name_english = 'books_general_interest' GROUP BY review_score ORDER BY review_score",
+    "expected_answer_english": "The distribution of review scores for products in the 'books_general_interest' category is as follows:\n1. Score 1: 39 reviews\n2. Score 2: 8 reviews\n3. Score 3: 20 reviews\n4. Score 4: 84 reviews\n5. Score 5: 398 reviews",
+    "eval_type": "answer_verification",
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+  },
+  {
+    "id": "012",
+    "question": "What is the average delivery time for orders in the 'sports_leisure' category?",
+    "expected_sql": "SELECT AVG(JULIANDAY(order_delivered_customer_date) - JULIANDAY(order_purchase_timestamp)) FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id JOIN product_category_name_translation pct ON p.product_category_name = pct.product_category_name WHERE pct.product_category_name_english = 'sports_leisure' AND o.order_delivered_customer_date IS NOT NULL",
+    "expected_answer_english": "The average delivery time for orders in the 'sports_leisure' category is approximately 12.15 days.",
+    "eval_type": "answer_verification",
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+  },
+  {
+    "id": "013",
+    "question": "How many leads were qualified and closed in the last quarter of 2017? and what is the conversion rate of qualified leads to closed leads in the last quarter of 2017?",
+    "expected_sql": "SELECT COUNT(DISTINCT lq.mql_id) AS qualified_leads, COUNT(DISTINCT lc.mql_id) AS closed_leads, (COUNT(DISTINCT lc.mql_id) * 1.0 / COUNT(DISTINCT lq.mql_id)) AS conversion_rate FROM leads_qualified lq LEFT JOIN leads_closed lc ON lq.mql_id = lc.mql_id WHERE lq.first_contact_date BETWEEN '2017-10-01' AND '2017-12-31'",
+    "expected_answer_english": "A total of 1061 leads were qualified and 43 leads were closed in the last quarter of 2017. Conversion rate is 4.05%",
+    "eval_type": "answer_verification",
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+  },
+  {
+    "id": "014",
+    "question": "Which origin channel has the highest conversion rate of qualified leads to closed leads in the last quarter of 2017?",
+    "expected_sql": "SELECT origin, (COUNT(DISTINCT lc.mql_id) * 1.0 / COUNT(DISTINCT lq.mql_id)) AS conversion_rate FROM leads_qualified lq LEFT JOIN leads_closed lc ON lq.mql_id = lc.mql_id WHERE lq.first_contact_date BETWEEN '2017-10-01' AND '2017-12-31' GROUP BY origin ORDER BY conversion_rate DESC LIMIT 1",
+    "expected_answer_english": "The origin channel with the highest conversion rate of qualified leads to closed leads in the last quarter of 2017 is paid search, with conversion rate of 7.3%.",
+    "eval_type": "answer_verification",
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer."},
+  {
+    "id": "015",
+    "question": "What is the average time from first contact to lead closed for each origin channel in the last quarter of 2017?",
+    "expected_sql": "SELECT origin, AVG(JULIANDAY(lc.won_date) - JULIANDAY(lq.first_contact_date)) AS avg_time_to_won FROM leads_qualified lq join leads_closed lc on lq.mql_id = lc.mql_id WHERE lq.first_contact_date BETWEEN '2017-10-01' AND '2017-12-31' GROUP BY origin ORDER BY avg_time_to_won ASC",
+    "expected_answer_english": "Average time from first contact to lead closed for each origin channel in the last quarter of 2017 is as follows:\n1. ('display', 4.083333333488554)\n2. ('organic_search', 126.53888374494596)\n3. ('social', 132.5161419752209)\n4. ('direct_traffic', 169.58270254638046)\n5. ('paid_search', 178.95013117281098)\n6. ('email', 226.7206250000745)\n7. ('unknown', 259.95948302471595)",
+    "eval_type": "answer_verification",
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer."},
+  {
+    "id": "016",
+    "question": "How many products have zero reviews?",
+    "expected_sql": "SELECT count(distinct p.product_id) FROM products p LEFT JOIN order_items oi ON p.product_id = oi.product_id left JOIN orders o ON oi.order_id = o.order_id left join order_reviews r on o.order_id = r.order_id WHERE r.review_id IS NULL",
+    "expected_answer_english": "725 products have zero reviews.",
+    "eval_type": "answer_verification",
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+  },
+  {
+    "id": "017",
+    "question": "How many sellers have above average revenue but below average review scores?",
+    "expected_sql": "SELECT COUNT(*) FROM (SELECT s.seller_id FROM (SELECT s.seller_id FROM sellers s JOIN order_items oi ON s.seller_id = oi.seller_id JOIN order_reviews r ON oi.order_id = r.order_id GROUP BY s.seller_id HAVING SUM(oi.price) > (SELECT AVG(revenue) FROM (SELECT s2.seller_id, SUM(oi2.price) AS revenue FROM sellers s2 JOIN order_items oi2 ON s2.seller_id = oi2.seller_id GROUP BY s2.seller_id)) AND AVG(r.review_score) < (SELECT AVG(review_score) FROM order_reviews)))",
+    "expected_answer_english": "There are 304 sellers who have above average revenue but below average review scores.",
+    "eval_type": "answer_verification",
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+  },
+  {
+    "id": "018",
+    "question": "Who are the best customers?",
+    "expected_sql": "SELECT strftime('%Y-%m', order_purchase_timestamp) AS month, COUNT(*) AS order_volume FROM orders WHERE order_status = 'delivered' AND strftime('%Y', order_purchase_timestamp) = '2017' GROUP BY month ORDER BY order_volume DESC LIMIT 1",
+    "expected_answer_english": "The month with the highest order volume in 2017 was November.",
+    "eval_type": "answer_verification",
+    "eval_criteria": "Agent's answer should be the same as the expected answer."
+  },
+  {
+  "id": "019",
+  "question": "Who are the best customers?",
+  "expected_sql": null,
+  "expected_answer_english": null,
+  "eval_type": "ambiguity_handling",
+  "eval_criteria": "Agent should either ask a clarifying question about what 'best' means (highest spend, most orders, most recent purchase), OR state its interpretation explicitly before generating SQL. Failure is generating SQL silently without acknowledging ambiguity."
+  },
+  {
+  "id": "020",
+  "question": "What is the average freight value for sellers in São Paulo compared to other states?",
+  "expected_sql": "SELECT s.seller_state, AVG(oi.freight_value) FROM order_items oi JOIN sellers s ON oi.seller_id = s.seller_id GROUP BY 1 ORDER BY 1",
+  "expected_answer": "São Paulo sellers have lower average freight costs compared to other states due to proximity to customers.",
+  "eval_type": "known_failure",
+  "eval_criteria": "SQL is expected to be correct. Explanation is expected to FAIL — agent does not correctly attribute the business reason for freight differences. Documenting as baseline to improve insights prompt."
+  }
+]
