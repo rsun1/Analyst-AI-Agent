@@ -1,0 +1,222 @@
+[
+  {
+    "id": "001",
+    "question": "How many orders were delivered successfully?",
+    "eval_type": "answer_verification",
+    "expected_sql": "SELECT COUNT(*) FROM orders WHERE order_status = 'delivered'",
+    "agent_sql": "SELECT\n  COUNT(*) AS successful_delivery_count\nFROM orders\nWHERE order_delivered_customer_date IS NOT NULL\n  AND order_status = 'delivered';",
+    "expected_answer": "96,478 orders were successfully delivered.",
+    "agent_answer": "1. The data shows that there were 96,470 orders successfully delivered to customers, indicating a healthy level of fulfillment in the business.\n\n2. Recommendations:\n   - Analyze the factors contributing to successful deliveries to replicate this success across all orders.\n   - Consider implementing a customer feedback process specifically around delivery experience to identify areas for improvement.\n   - If you haven't already, track and address any patterns in unsuccessful deliveries to further enhance overall performance.",
+    "factual_accuracy": "FAIL",
+    "answer_quality": 3
+  },
+  {
+    "id": "002",
+    "question": "What are the top 5 product categories by total revenue?",
+    "eval_type": "answer_verification",
+    "expected_sql": "SELECT p.product_category_name_english, SUM(oi.price) as revenue FROM order_items oi JOIN products p ON oi.product_id = p.product_id JOIN product_category_name_translation pct ON p.product_category_name = pct.product_category_name GROUP BY 1 ORDER BY 2 DESC LIMIT 5",
+    "agent_sql": "SELECT\n  p.product_category_name,\n  SUM(op.payment_value) AS revenue\nFROM orders o\nJOIN order_items oi ON oi.order_id = o.order_id\nJOIN order_payments op ON op.order_id = o.order_id\nJOIN products p ON p.product_id = oi.product_id\nGROUP BY p.product_category_name\nORDER BY revenue DESC\nLIMIT 5;",
+    "expected_answer": "Top 5 categories ranked by total sales amount are:\n1. 'beauty_health', 1258681.34\n2. 'watches_gifts', 1205005.68\n3. 'bed_bath_table', 1036988.68\n4. 'sports_leisure', 988048.97\n5. 'computers_accessories', 911954.32",
+    "agent_answer": "1. The top five product categories by total revenue show that home goods (cama_mesa_banho), beauty products (beleza_saude), computer accessories (informatica_acessorios), furniture and decor (moveis_decoracao), and watches and gifts (relogios_presentes) are the most lucrative for the business. Together, these categories contribute significantly to overall revenue.\n\n2. \n- **Focus Marketing Efforts**: Allocate more marketing resources to the top three categories (cama_mesa_banho, beleza_saude, and informatica_acessorios) as they generate the highest revenue.\n- **Bundle Promotions**: Consider creating bundled promotions or cross-selling opportunities between these top categories to enhance customer purchasing behavior.\n- **Inventory Management**: Ensure that stock levels for these high-revenue categories are optimized to meet demand, reducing the risk of stockouts and potential lost sales.",
+    "factual_accuracy": "FAIL",
+    "answer_quality": 2
+  },
+  {
+    "id": "003",
+    "question": "What is the average review score by product category for the top 5 highest-selling categories?",
+    "eval_type": "answer_verification",
+    "expected_sql": "SELECT p.product_category_name_english, AVG(r.review_score) FROM order_reviews r JOIN orders o ON r.order_id = o.order_id JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id JOIN product_category_name_translation pct ON p.product_category_name = pct.product_category_name GROUP BY 1 ORDER BY 2 DESC",
+    "agent_sql": "WITH top_categories AS (\n  SELECT\n    p.product_category_name,\n    SUM(op.payment_value) AS revenue\n  FROM orders o\n  JOIN order_items oi ON oi.order_id = o.order_id\n  JOIN order_payments op ON op.order_id = o.order_id\n  JOIN products p ON p.product_id = oi.product_id\n  GROUP BY p.product_category_name\n  ORDER BY revenue DESC\n  LIMIT 5\n)\nSELECT\n  p.product_category_name,\n  AVG(r.review_score) AS avg_review_score\nFROM top_categories tc\nJOIN products p ON p.product_category_name = tc.product_category_name\nJOIN order_items oi ON oi.product_id = p.product_id\nJOIN orders o ON o.order_id = oi.order_id\nLEFT JOIN order_reviews r ON r.order_id = o.order_id\nGROUP BY p.product_category_name\nORDER BY avg_review_score DESC;",
+    "expected_answer": "Average review scores per category for the top 5 highest-selling categories are:\n1. 'cds_dvds_musicals', 4.642857142857143\n2. 'fashion_childrens_clothes', 4.5\n3. 'books_general_interest', 4.446265938069216\n4. 'construction_tools_tools', 4.444444444444445\n5. 'flowers', 4.419354838709677",
+    "agent_answer": "**Summary:**\nThe analysis shows the average review scores for the top five highest-selling product categories. \"Beleza e Sa\u00fade\" received the highest average rating of approximately 4.14, while \"Cama, Mesa e Banho\" had the lowest at around 3.90. Overall, the scores indicate that customers are generally satisfied with the products in these categories.\n\n**Actionable Insights:**\n1. **Focus on & Promote Higher-Rated Categories:** Enhance marketing efforts for \"Beleza e Sa\u00fade,\" leveraging its strong average review score to attract more customers.\n   \n2. **Address Customer Feedback in Lower-Rated Categories:** Investigate customer reviews in \"Cama, Mesa e Banho\" and \"M\u00f3veis e Decora\u00e7\u00e3o\" to identify specific improvement areas, aiming to boost ratings and, consequently, sales.\n\n3. **Leverage Positive Reviews in Marketing:** Use positive customer reviews and testimonials from high-rated categories in promotional materials to enhance brand trust and drive sales across platforms.",
+    "factual_accuracy": "FAIL",
+    "answer_quality": 2
+  },
+  {
+    "id": "004",
+    "question": "Which payment method is most commonly used?",
+    "eval_type": "answer_verification",
+    "expected_sql": "SELECT payment_type, COUNT(*) FROM order_payments GROUP BY 1 ORDER BY 2 DESC LIMIT 1",
+    "agent_sql": "SELECT\n  payment_type,\n  COUNT(*) AS payment_count\nFROM order_payments\nGROUP BY payment_type\nORDER BY payment_count DESC\nLIMIT 1;",
+    "expected_answer": "Credit card is the most used payment method.",
+    "agent_answer": "1. The data shows that the most commonly used payment method for orders is credit card, with a total of 76,795 transactions. This indicates a strong preference among customers for paying with credit cards.\n\n2. Recommendations:\n   - Consider offering promotions or loyalty rewards specifically for credit card users to enhance customer retention.\n   - Ensure that the credit card payment process is optimized for speed and security to maintain customer satisfaction.\n   - Explore partnerships with credit card companies to introduce special offers that could drive even more sales.",
+    "factual_accuracy": "PASS",
+    "answer_quality": 3
+  },
+  {
+    "id": "005",
+    "question": "What is the average delivery time in days?",
+    "eval_type": "answer_verification",
+    "expected_sql": "SELECT AVG(JULIANDAY(order_delivered_customer_date) - JULIANDAY(order_purchase_timestamp)) FROM orders WHERE order_delivered_customer_date IS NOT NULL",
+    "agent_sql": "SELECT\n  AVG(julianday(order_delivered_customer_date) - julianday(order_estimated_delivery_date)) AS avg_delivery_time_days\nFROM orders\nWHERE order_delivered_customer_date IS NOT NULL\n  AND order_estimated_delivery_date IS NOT NULL;",
+    "expected_answer": "Average delivery time is approximately 12.5 days.",
+    "agent_answer": "1. **Summary**: The average delivery time is approximately -11.18 days, indicating that orders are typically delivered 11 days before their estimated delivery dates. This suggests that customers are receiving their orders much earlier than expected.\n\n2. **Recommendations**:\n   - **Adjust Estimated Delivery Dates**: Revise the estimated delivery dates to align better with actual delivery times, enhancing customer satisfaction and expectation management.\n   - **Analyze Efficiency**: Investigate the factors contributing to early deliveries to identify best practices that can be replicated across the board for even more efficient operations.\n   - **Communicate Early Deliveries**: Leverage the early delivery trend in marketing communications to boost customer confidence and potentially attract new clients by showcasing reliable service.",
+    "factual_accuracy": "FAIL",
+    "answer_quality": 1
+  },
+  {
+    "id": "006",
+    "question": "Which state has the highest number of customers?",
+    "eval_type": "answer_verification",
+    "expected_sql": "SELECT customer_state, COUNT(*) FROM customers GROUP BY 1 ORDER BY 2 DESC LIMIT 1",
+    "agent_sql": "SELECT\n  customer_state,\n  COUNT(DISTINCT customer_id) AS customer_count\nFROM customers\nGROUP BY customer_state\nORDER BY customer_count DESC\nLIMIT 1;",
+    "expected_answer": "The state with the highest number of customers is S\u00c3\u00a3o Paulo (SP).",
+    "agent_answer": "1. The data shows that the state with the highest number of customers is SP, with a total of 41,746 unique customers. This indicates a strong customer base in that region.\n\n2. \n- **Focus Marketing Efforts**: Increase targeted marketing campaigns in SP to further capitalize on the large customer base and potentially boost sales.\n- **Customer Retention Programs**: Implement loyalty programs in SP to retain existing customers and encourage repeat business.\n- **Resource Allocation**: Consider allocating more resources (such as customer service and inventory) to SP to effectively manage and enhance the customer experience in that area.",
+    "factual_accuracy": "PASS",
+    "answer_quality": 3
+  },
+  {
+    "id": "007",
+    "question": "What is the total revenue generated from orders placed in 2017?",
+    "eval_type": "answer_verification",
+    "expected_sql": "SELECT SUM(price) FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.order_purchase_timestamp BETWEEN '2017-01-01' AND '2017-12-31'",
+    "agent_sql": "SELECT\n  SUM(op.payment_value) AS total_revenue\nFROM orders o\nJOIN order_payments op ON op.order_id = o.order_id\nWHERE o.order_purchase_timestamp BETWEEN '2017-01-01' AND '2017-12-31';",
+    "expected_answer": "Total revenue generated from orders placed in 2017 is approximately 6.15 million Brazilian Reais.",
+    "agent_answer": "1. In 2017, the total revenue generated from orders amounted to approximately $7.24 million.\n\n2. Actionable insights:\n   - Consider analyzing sales trends from 2017 to identify peak periods, which can guide inventory and marketing strategies for increased sales.\n   - Explore customer feedback and satisfaction data from 2017 to improve service offerings or products, potentially driving higher revenue in future years.\n   - Investigate the effectiveness of promotional campaigns run during 2017, as insights could help shape more successful campaigns moving forward.",
+    "factual_accuracy": "FAIL",
+    "answer_quality": 3
+  },
+  {
+    "id": "008",
+    "question": "What are the top 10 sellers'(based on their number of orders) average review scores?",
+    "eval_type": "answer_verification",
+    "expected_sql": "SELECT sellers.seller_id, AVG(order_reviews.review_score) AS avg_review_score, SUM(order_items.price) AS total_sales, COUNT(orders.order_id) AS num_orders FROM sellers LEFT JOIN order_items ON sellers.seller_id = order_items.seller_id LEFT JOIN orders ON order_items.order_id = orders.order_id LEFT JOIN order_reviews ON orders.order_id = order_reviews.order_id GROUP BY  sellers.seller_id ORDER BY num_orders DESC LIMIT 10",
+    "agent_sql": "SELECT\n  oi.seller_id,\n  AVG(r.review_score) AS average_review_score\nFROM order_items oi\nJOIN orders o ON oi.order_id = o.order_id\nLEFT JOIN order_reviews r ON r.order_id = o.order_id\nGROUP BY oi.seller_id\nORDER BY COUNT(DISTINCT oi.order_id) DESC\nLIMIT 10;",
+    "expected_answer": "Here are the top 10 sellers (based on number of orders) and their average review scores:\n1. '6560211a19b47992c3666cc44a7e94c0', 3.9094059405940595, 123585.82, 2039\n2. '4a3ca9315b744ce9f8e9374361493884', 3.803931451612903\n3. '1f50f920176fa81dab994f9023523100', 3.9824016563147\n4. 'cc419e0650a3c5ba77189a1882b7556a', 4.0695748205411375\n5. 'da8622b14eb17ae2831f4ac5b9dab84a', 4.071428571428571\n6. '955fee9216a65b617aa5c0531780ce60', 4.0517125587642715\n7. '1025f0e2d44d7041d6cf58b6550e0bfa', 3.8497554157931515\n8. '7c67e1448b00f6e969d365cea6b010ab', 3.348207754206291\n9. 'ea8482cd71df3c1969d7b9473ff13abc', 3.953216374269006\n10. '7a67c85e85bb2ce8582c35f2203ad736', 4.234991423670669",
+    "agent_answer": "### Summary:\nThe data reveals the average review scores for the top 10 sellers, ranked by the number of orders they received. The average review scores range from approximately 3.8 to 4.23, with the highest score belonging to seller ID 7a67c85e85bb2ce8582c35f2203ad736. This indicates a generally positive customer satisfaction landscape among the leading sellers.\n\n### Recommendations:\n1. **Leverage High-Scoring Sellers**: Identify and promote sellers with the highest average review scores, such as the top-ranked seller with a score of 4.23, to enhance user trust and attract more buyers.\n2. **Address Low-Performing Sellers**: Investigate the reasons behind lower scores of sellers like 4a3ca9315b744ce9f8e9374361493884 (average score of 3.80). Implement training or support initiatives to help improve their performance and customer satisfaction.\n3. **Monitor Customer Feedback Trends**: Regularly assess review scores and feedback trends to proactively tackle quality issues and maintain high service levels across all sellers.",
+    "factual_accuracy": "FAIL",
+    "answer_quality": 3
+  },
+  {
+    "id": "009",
+    "question": "What is the average price of products in the 'electronics' category?",
+    "eval_type": "answer_verification",
+    "expected_sql": "SELECT AVG(price) FROM products p JOIN product_category_name_translation pct ON p.product_category_name = pct.product_category_name JOIN order_items oi ON oi.product_id = p.product_id WHERE pct.product_category_name_english = 'electronics'",
+    "agent_sql": "SELECT\n  AVG(oi.price) AS avg_price\nFROM order_items oi\nJOIN products p ON p.product_id = oi.product_id\nWHERE p.product_category_name = 'electronics';",
+    "expected_answer": "The average price of products in the 'electronics' category is approximately 57.9 Brazilian Reais.",
+    "agent_answer": "1. The query returned \"None\" for the average price of products in the 'electronics' category, indicating that there are currently no recorded sales or products listed under this category in the database.\n\n2. Recommendations:\n   - Investigate why there are no products or sales in the 'electronics' category. This could involve checking inventory, supplier agreements, or product listings.\n   - If there are indeed no available electronics products, consider launching new products in this category to meet potential customer demand.\n   - Monitor the sales and stock levels of electronics regularly to ensure ongoing availability and adjust marketing strategies accordingly.",
+    "factual_accuracy": "FAIL",
+    "answer_quality": 3
+  },
+  {
+    "id": "010",
+    "question": "How many orders were delivered successfully in July 2017, and is that more or less than the previous month?",
+    "eval_type": "answer_verification",
+    "expected_sql": "SELECT strftime('%Y-%m', order_purchase_timestamp) AS order_month, COUNT(*) AS order_count FROM orders WHERE order_status = 'delivered' AND order_purchase_timestamp BETWEEN '2017-06-01' AND '2017-07-31' GROUP BY order_month ORDER BY order_month",
+    "agent_sql": "WITH monthly_deliveries AS (\n  SELECT\n    strftime('%Y-%m', order_delivered_customer_date) AS delivery_month,\n    COUNT(*) AS delivery_count\n  FROM orders\n  WHERE order_delivered_customer_date IS NOT NULL\n  GROUP BY delivery_month\n)\nSELECT\n  md.delivery_month,\n  md.delivery_count,\n  COALESCE(LAG(md.delivery_count) OVER (ORDER BY md.delivery_month), 0) AS previous_month_count\nFROM monthly_deliveries md\nWHERE md.delivery_month IN ('2017-07', '2017-06');",
+    "expected_answer": "In July 2017, successfully delivered orders were 3729, higher than in June 2017.",
+    "agent_answer": "1. In July 2017, there were 3,455 successful deliveries, which is an increase of 232 deliveries compared to June 2017, where 3,223 deliveries were completed.\n\n2. Recommendations:\n   - Analyze factors contributing to the increase in July, such as promotions or changes in logistics, to replicate successful strategies in future months.\n   - Consider scaling up resources (staff, delivery capacity) in anticipation of continued demand based on rising delivery numbers.\n   - Monitor customer feedback from July deliveries to identify areas for further improvement in service quality and efficiency.",
+    "factual_accuracy": "FAIL",
+    "answer_quality": 3
+  },
+  {
+    "id": "011",
+    "question": "What is the distribution of review scores for products in the 'books_general_interest' category?",
+    "eval_type": "answer_verification",
+    "expected_sql": "SELECT review_score, COUNT(*) FROM order_reviews r JOIN orders o ON r.order_id = o.order_id JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id JOIN product_category_name_translation pct ON p.product_category_name = pct.product_category_name WHERE pct.product_category_name_english = 'books_general_interest' GROUP BY review_score ORDER BY review_score",
+    "agent_sql": "SELECT\n  r.review_score,\n  COUNT(*) AS review_count\nFROM order_reviews r\nJOIN order_items oi ON r.order_id = oi.order_id\nJOIN products p ON oi.product_id = p.product_id\nWHERE p.product_category_name = 'books_general_interest'\nGROUP BY r.review_score\nORDER BY r.review_score;",
+    "expected_answer": "The distribution of review scores for products in the 'books_general_interest' category is as follows:\n1. Score 1: 39 reviews\n2. Score 2: 8 reviews\n3. Score 3: 20 reviews\n4. Score 4: 84 reviews\n5. Score 5: 398 reviews",
+    "agent_answer": "### Summary:\nThe data shows the distribution of review scores for products in the 'books_general_interest' category, indicating how many reviews received each score. This information helps assess overall customer satisfaction and product performance in this category.\n\n### Recommendations:\n1. **Identify High Performers**: Focus on products with high review scores (e.g., 4-5 stars) for promotions or featured placements to enhance sales.\n2. **Address Low Ratings**: Analyze products with low scores (e.g., 1-2 stars) to identify common issues or areas for improvement. Consider reaching out to customers for feedback or implementing changes.\n3. **Leverage Customer Feedback**: Use the insights from review content, if available, to refine marketing strategies and improve product offerings based on what resonates with customers.",
+    "factual_accuracy": "FAIL",
+    "answer_quality": 2
+  },
+  {
+    "id": "012",
+    "question": "What is the average delivery time for orders in the 'sports_leisure' category?",
+    "eval_type": "answer_verification",
+    "expected_sql": "SELECT AVG(JULIANDAY(order_delivered_customer_date) - JULIANDAY(order_purchase_timestamp)) FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id JOIN product_category_name_translation pct ON p.product_category_name = pct.product_category_name WHERE pct.product_category_name_english = 'sports_leisure' AND o.order_delivered_customer_date IS NOT NULL",
+    "agent_sql": "SELECT\n  AVG(julianday(o.order_delivered_customer_date) - julianday(o.order_estimated_delivery_date)) AS avg_delivery_time\nFROM orders o\nJOIN order_items oi ON oi.order_id = o.order_id\nJOIN products p ON p.product_id = oi.product_id\nWHERE p.product_category_name = 'sports_leisure'\n  AND o.order_delivered_customer_date IS NOT NULL\n  AND o.order_estimated_delivery_date IS NOT NULL;",
+    "expected_answer": "The average delivery time for orders in the 'sports_leisure' category is approximately 12.15 days.",
+    "agent_answer": "1. The query returned no results for average delivery time in the 'sports_leisure' category, which indicates that there may be no completed orders within this category that had both estimated and actual delivery dates recorded.\n\n2. **Recommendations:**\n   - **Investigate Data Integrity:** Review the database for potential data entry issues that might have led to the absence of delivery dates for orders in this category.\n   - **Encourage Order Completion:** Implement strategies to increase order processing and tracking, ensuring that all orders have accurate delivery information.\n   - **Analyze Timeframes:** If applicable, analyze other product categories to assess delivery performance; this may help identify if 'sports_leisure' is an anomaly or part of a broader issue.",
+    "factual_accuracy": "FAIL",
+    "answer_quality": 2
+  },
+  {
+    "id": "013",
+    "question": "How many leads were qualified and closed in the last quarter of 2017? and what is the conversion rate of qualified leads to closed leads in the last quarter of 2017?",
+    "eval_type": "answer_verification",
+    "expected_sql": "SELECT COUNT(DISTINCT lq.mql_id) AS qualified_leads, COUNT(DISTINCT lc.mql_id) AS closed_leads, (COUNT(DISTINCT lc.mql_id) * 1.0 / COUNT(DISTINCT lq.mql_id)) AS conversion_rate FROM leads_qualified lq LEFT JOIN leads_closed lc ON lq.mql_id = lc.mql_id WHERE lq.first_contact_date BETWEEN '2017-10-01' AND '2017-12-31'",
+    "agent_sql": "SELECT\n  COUNT(DISTINCT lq.mql_id) AS qualified_count,\n  COUNT(DISTINCT lc.mql_id) AS closed_count,\n  ROUND(100.0 * COUNT(DISTINCT lc.mql_id) / NULLIF(COUNT(DISTINCT lq.mql_id), 0), 2) AS conversion_rate\nFROM leads_qualified lq\nLEFT JOIN leads_closed lc ON lc.mql_id = lq.mql_id\nWHERE lq.first_contact_date BETWEEN '2017-10-01' AND '2017-12-31';",
+    "expected_answer": "A total of 1061 leads were qualified and 43 leads were closed in the last quarter of 2017. Conversion rate is 4.05%",
+    "agent_answer": "In the last quarter of 2017, out of 1,061 qualified leads, only 43 were successfully closed, resulting in a conversion rate of 4.05%. This indicates that while a significant number of leads were qualified, very few turned into actual sales.\n\n**Recommendations:**\n1. **Analyze Lead Quality:** Investigate why a high number of qualified leads did not convert. Consider improving lead qualification criteria or addressing potential issues in the sales process.\n2. **Enhance Sales Training:** Provide additional training or resources to the sales team focusing on closing techniques or objection handling to increase conversion rates.\n3. **Follow-Up Strategy:** Develop a more robust follow-up strategy for qualified leads to keep them engaged and increase the likelihood of closure.",
+    "factual_accuracy": "PASS",
+    "answer_quality": 3
+  },
+  {
+    "id": "014",
+    "question": "Which origin channel has the highest conversion rate of qualified leads to closed leads in the last quarter of 2017?",
+    "eval_type": "answer_verification",
+    "expected_sql": "SELECT origin, (COUNT(DISTINCT lc.mql_id) * 1.0 / COUNT(DISTINCT lq.mql_id)) AS conversion_rate FROM leads_qualified lq LEFT JOIN leads_closed lc ON lq.mql_id = lc.mql_id WHERE lq.first_contact_date BETWEEN '2017-10-01' AND '2017-12-31' GROUP BY origin ORDER BY conversion_rate DESC LIMIT 1",
+    "agent_sql": "SELECT\n  lq.origin,\n  COUNT(DISTINCT lq.mql_id) AS qualified_count,\n  COUNT(DISTINCT lc.mql_id) AS closed_count,\n  ROUND(100.0 * COUNT(DISTINCT lc.mql_id) / NULLIF(COUNT(DISTINCT lq.mql_id), 0), 2) AS conversion_pct\nFROM leads_qualified lq\nLEFT JOIN leads_closed lc ON lc.mql_id = lq.mql_id\nWHERE lq.first_contact_date BETWEEN '2017-10-01' AND '2017-12-31'\nGROUP BY lq.origin\nORDER BY conversion_pct DESC\nLIMIT 1;",
+    "expected_answer": "The origin channel with the highest conversion rate of qualified leads to closed leads in the last quarter of 2017 is paid search, with conversion rate of 7.3%.",
+    "agent_answer": "1. The data shows that during the last quarter of 2017, the \"paid search\" origin channel had 205 qualified leads, but only 15 of those converted to closed leads, resulting in a conversion rate of 7.32%. This indicates that while paid search generates a significant number of qualified leads, the conversion from qualified to closed leads is relatively low.\n\n2. Recommendations:\n   - Investigate the reasons behind the low conversion rate in the paid search channel to identify potential issues in lead nurturing or qualification processes.\n   - Consider optimizing the messaging and targeting strategies for paid search campaigns to attract leads that are more likely to convert into closed business.\n   - Evaluate the funnel performance of other channels to identify potentially higher-performing sources and allocate resources accordingly.",
+    "factual_accuracy": "PASS",
+    "answer_quality": 3
+  },
+  {
+    "id": "015",
+    "question": "What is the average time from first contact to lead closed for each origin channel in the last quarter of 2017?",
+    "eval_type": "answer_verification",
+    "expected_sql": "SELECT origin, AVG(JULIANDAY(lc.won_date) - JULIANDAY(lq.first_contact_date)) AS avg_time_to_won FROM leads_qualified lq join leads_closed lc on lq.mql_id = lc.mql_id WHERE lq.first_contact_date BETWEEN '2017-10-01' AND '2017-12-31' GROUP BY origin ORDER BY avg_time_to_won ASC",
+    "agent_sql": "SELECT\n  lq.origin,\n  AVG(julianday(lc.won_date) - julianday(lq.first_contact_date)) AS average_time_to_close\nFROM leads_qualified lq\nINNER JOIN leads_closed lc ON lc.mql_id = lq.mql_id\nWHERE lq.first_contact_date BETWEEN '2017-10-01' AND '2017-12-31'\n  AND lc.won_date IS NOT NULL\nGROUP BY lq.origin;",
+    "expected_answer": "Average time from first contact to lead closed for each origin channel in the last quarter of 2017 is as follows:\n1. ('display', 4.083333333488554)\n2. ('organic_search', 126.53888374494596)\n3. ('social', 132.5161419752209)\n4. ('direct_traffic', 169.58270254638046)\n5. ('paid_search', 178.95013117281098)\n6. ('email', 226.7206250000745)\n7. ('unknown', 259.95948302471595)",
+    "agent_answer": "### Summary\nThe data shows the average time taken to close leads across different origin channels for the last quarter of 2017. The shortest average time to close was from the display channel (approximately 4 days), while the longest average was from leads categorized as \"unknown\" (about 260 days). Other channels, like email and paid search, took between 179 and 227 days to close leads.\n\n### Recommendations\n1. **Optimize Email Campaigns**: Given that email has one of the longest closing times (227 days), evaluate the content and follow-up strategies to potentially reduce this duration.\n  \n2. **Leverage Display Advertising**: The display channel has significantly shorter closing times; increase investment in this channel to maximize quick conversions.\n\n3. **Investigate Unknown Origin**: Analyze leads marked as \"unknown\" to understand what might be contributing to the prolonged closure time and refine tracking methodologies to identify these leads effectively.",
+    "factual_accuracy": "FAIL",
+    "answer_quality": 3
+  },
+  {
+    "id": "016",
+    "question": "How many products have zero reviews?",
+    "eval_type": "answer_verification",
+    "expected_sql": "SELECT count(distinct p.product_id) FROM products p LEFT JOIN order_items oi ON p.product_id = oi.product_id left JOIN orders o ON oi.order_id = o.order_id left join order_reviews r on o.order_id = r.order_id WHERE r.review_id IS NULL",
+    "agent_sql": "SELECT\n  COUNT(DISTINCT p.product_id) AS products_with_zero_reviews\nFROM products p\nLEFT JOIN order_items oi ON p.product_id = oi.product_id\nLEFT JOIN order_reviews r ON oi.order_id = r.order_id\nWHERE r.review_id IS NULL;",
+    "expected_answer": "725 products have zero reviews.",
+    "agent_answer": "1. **Summary**: There are 725 products in our inventory that currently have no reviews. This indicates that these products may not be gaining customer feedback or engagement.\n\n2. **Recommendations**:\n   - **Encourage Customer Reviews**: Implement strategies such as follow-up emails after purchase or incentivizing reviews with discounts to prompt customers to leave feedback on these products.\n   - **Promote Visibility**: Highlight these products in marketing campaigns or website features to increase their exposure, potentially leading to more sales and, subsequently, reviews.\n   - **Analyze Product Performance**: Investigate why these products lack reviews\u2014consider factors like their visibility, popularity, or satisfaction levels, and adjust inventory or marketing strategies accordingly.",
+    "factual_accuracy": "PASS",
+    "answer_quality": 3
+  },
+  {
+    "id": "017",
+    "question": "How many sellers have above average revenue but below average review scores?",
+    "eval_type": "answer_verification",
+    "expected_sql": "SELECT COUNT(*) FROM (SELECT s.seller_id FROM (SELECT s.seller_id FROM sellers s JOIN order_items oi ON s.seller_id = oi.seller_id JOIN order_reviews r ON oi.order_id = r.order_id GROUP BY s.seller_id HAVING SUM(oi.price) > (SELECT AVG(revenue) FROM (SELECT s2.seller_id, SUM(oi2.price) AS revenue FROM sellers s2 JOIN order_items oi2 ON s2.seller_id = oi2.seller_id GROUP BY s2.seller_id)) AND AVG(r.review_score) < (SELECT AVG(review_score) FROM order_reviews)))",
+    "agent_sql": "WITH seller_revenue AS (\n  SELECT\n    oi.seller_id,\n    SUM(op.payment_value) AS total_revenue\n  FROM order_items oi\n  JOIN order_payments op ON op.order_id = oi.order_id\n  GROUP BY oi.seller_id\n),\naverage_revenue AS (\n  SELECT AVG(total_revenue) AS avg_revenue FROM seller_revenue\n),\nseller_reviews AS (\n  SELECT\n    oi.seller_id,\n    AVG(r.review_score) AS avg_review_score\n  FROM order_items oi\n  JOIN orders o ON o.order_id = oi.order_id\n  LEFT JOIN order_reviews r ON r.order_id = o.order_id\n  GROUP BY oi.seller_id\n),\naverage_review_score AS (\n  SELECT AVG(avg_review_score) AS avg_score FROM seller_reviews\n)\nSELECT\n  sr.seller_id\nFROM seller_revenue sr\nJOIN average_revenue ar ON sr.total_revenue > ar.avg_revenue\nJOIN seller_reviews srev ON srev.seller_id = sr.seller_id\nJOIN average_review_score ars ON srev.avg_review_score < ars.avg_score;",
+    "expected_answer": "There are 304 sellers who have above average revenue but below average review scores.",
+    "agent_answer": "**Summary:**  \nThe query identifies sellers who are generating above-average revenue but have below-average review scores. The results show a list of seller IDs that fit this criterion, suggesting a potential issue where sales performance does not correlate with customer satisfaction.\n\n**Recommendations:**\n1. **Investigate Seller Practices:** Evaluate the operations and offerings of these sellers to uncover the reasons for their lower review scores despite high sales.\n2. **Implement Quality Control:** Consider establishing guidelines or support systems for these sellers to improve their customer service and product quality, which could enhance their ratings.\n3. **Encourage Feedback:** Foster a proactive feedback loop by encouraging customers to review their experiences, allowing sellers to understand specific pain points that need addressing.",
+    "factual_accuracy": "FAIL",
+    "answer_quality": 3
+  },
+  {
+    "id": "018",
+    "question": "Who are the best customers?",
+    "eval_type": "answer_verification",
+    "expected_sql": "SELECT strftime('%Y-%m', order_purchase_timestamp) AS month, COUNT(*) AS order_volume FROM orders WHERE order_status = 'delivered' AND strftime('%Y', order_purchase_timestamp) = '2017' GROUP BY month ORDER BY order_volume DESC LIMIT 1",
+    "agent_sql": "SELECT\n  o.customer_id,\n  SUM(op.payment_value) AS total_spending\nFROM orders o\nJOIN order_payments op ON op.order_id = o.order_id\nGROUP BY o.customer_id\nORDER BY total_spending DESC;",
+    "expected_answer": "The month with the highest order volume in 2017 was November.",
+    "agent_answer": "1. **Summary**: The query identifies customer spending, ranking them by total spending amounts. The top customer has spent approximately $13,664, while the average spending across all customers is about $161. This suggests a diverse customer base, with some significantly higher spenders.\n\n2. **Insights/Recommendations**:\n   - **Target High-Spenders**: Create loyalty programs or personalized offers for the top customers to encourage repeat purchases and customer retention.\n   - **Analyze Low-Spenders**: Implement strategies to convert lower-spending customers (average spending around $161) into higher spenders, such as tailored marketing campaigns or educational content about product value.\n   - **Monitor Spending Patterns**: Regularly review and analyze spending trends to identify shifts in customer behavior, allowing for timely adjustments in marketing and sales strategies.",
+    "factual_accuracy": "FAIL",
+    "answer_quality": 3
+  },
+  {
+    "id": "019",
+    "question": "Who are the best customers?",
+    "eval_type": "ambiguity_handling",
+    "expected_sql": null,
+    "agent_sql": "SELECT\n  o.customer_id,\n  SUM(op.payment_value) AS total_spent\nFROM orders o\nJOIN order_payments op ON op.order_id = o.order_id\nGROUP BY o.customer_id\nORDER BY total_spent DESC;",
+    "expected_answer": null,
+    "agent_answer": "1. **Summary**: The data shows the total amount spent by customers, with the highest spender contributing over $13,664 and the average customer spending around $160. This indicates a diverse range of customer spending behavior, with a significant gap between the top buyers and average customers.\n\n2. **Insights/Recommendations**:\n   - **Target Top Customers**: Implement loyalty programs or exclusive offers aimed at top spenders to encourage repeat purchases and increase their lifetime value.\n   - **Engage Average Spenders**: Develop targeted marketing campaigns to convert average customers into higher spenders. This could include personalized promotions or bundles based on their previous purchases.\n   - **Analyze Churn**: Investigate customer spending patterns and identify why some high spenders may drop off. Addressing their needs could help retain valuable customers.",
+    "factual_accuracy": "FAIL",
+    "answer_quality": 2
+  },
+  {
+    "id": "020",
+    "question": "What is the average freight value for sellers in S\u00c3\u00a3o Paulo compared to other states?",
+    "eval_type": "known_failure",
+    "expected_sql": "SELECT s.seller_state, AVG(oi.freight_value) FROM order_items oi JOIN sellers s ON oi.seller_id = s.seller_id GROUP BY 1 ORDER BY 1",
+    "agent_sql": "SELECT\n  CASE WHEN s.seller_state = 'SP' THEN 'S\u00e3o Paulo' ELSE 'Other States' END AS state_type,\n  AVG(oi.freight_value) AS avg_freight_value\nFROM orders o\nJOIN order_items oi ON oi.order_id = o.order_id\nJOIN sellers s ON s.seller_id = oi.seller_id\nJOIN customers c ON c.customer_id = o.customer_id\nGROUP BY state_type;",
+    "expected_answer": "S\u00c3\u00a3o Paulo sellers have lower average freight costs compared to other states due to proximity to customers.",
+    "agent_answer": "1. The average freight value for sellers in S\u00e3o Paulo is approximately 18.45, while sellers in other states have a higher average freight value of about 23.82. This indicates that shipping costs in S\u00e3o Paulo are lower compared to the rest of the country.\n\n2. Recommendations:\n   - Consider promoting S\u00e3o Paulo sellers as they have lower freight costs, making their products more competitive.\n   - Investigate the factors contributing to the higher freight costs in other states to identify potential areas for cost reduction.\n   - Explore partnerships with logistics providers in S\u00e3o Paulo to possibly extend better rates or services to sellers in higher-cost regions.",
+    "factual_accuracy": "DOCUMENTED",
+    "answer_quality": null
+  }
+]

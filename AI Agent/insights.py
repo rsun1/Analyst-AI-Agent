@@ -14,7 +14,17 @@ def format_results_for_prompt(columns: list[str], rows: list[tuple], max_rows: i
     for row in rows[:max_rows]:
         lines.append(" | ".join(str(c) for c in row))
     if len(rows) > max_rows:
-        lines.append(f"... ({len(rows) - max_rows} more rows)")
+        lines.append(f"... ({len(rows) - max_rows} more rows not shown)")
+        # Append distribution stats for numeric columns so the LLM isn't blind
+        # to the full dataset when only a sample is shown.
+        for i, col in enumerate(columns):
+            vals = [r[i] for r in rows if isinstance(r[i], (int, float))]
+            if vals:
+                lines.append(
+                    f"[{col} — full {len(rows)}-row stats: "
+                    f"min={min(vals):.2f}, max={max(vals):.2f}, "
+                    f"avg={sum(vals)/len(vals):.2f}]"
+                )
     return "\n".join(lines)
 
 
