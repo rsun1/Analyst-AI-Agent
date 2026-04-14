@@ -17,6 +17,7 @@ env/
 .ipynb_checkpoints/
 
 # IDE / editor
+.claude/
 .cursor/
 .vscode/
 .vscode.example/
