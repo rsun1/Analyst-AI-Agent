@@ -128,7 +128,7 @@ tables:
         note: "primary key"
       product_category_name:
         type: TEXT
-        note: "Portuguese category name; join to product_category_name_translation for English"
+        note: "Portuguese category name; join to product_category_name_translation for English; examples: 'eletronicos' (electronics), 'esporte_lazer' (sports_leisure), 'livros_interesse_geral' (books_general_interest), 'beleza_saude' (health_beauty) "
       product_name_lenght:
         type: REAL
         note: "character count of product name — intentional typo in DB, use exactly this spelling"
@@ -162,7 +162,7 @@ tables:
         note: "2-letter Brazilian state code"
 
   product_category_name_translation:
-    description: "Maps Portuguese product category names to English. One row per category."
+    description: "Maps Portuguese product category names to English. One row per category.Maps Portuguese category names to English equivalents. Use this table whenever filtering products by English category names like 'electronics', 'sports_leisure', 'books_general_interest'."
     columns:
       product_category_name:
         type: TEXT
@@ -322,3 +322,9 @@ pitfalls:
   - "There is NO direct join between orders/customers and leads_qualified/leads_closed. The only bridge is seller_id: orders -> order_items -> leads_closed -> leads_qualified."
   - "Do NOT join leads_qualified to orders on a date or NULL condition. leads_qualified has no order_id column."
   - "When counting leads linked to orders, use COUNT(DISTINCT lq.mql_id) or COUNT(DISTINCT lc.seller_id) to avoid row multiplication from multiple items per order."
+  - "REVENUE BY CATEGORY: Use SUM(order_items.price) for item-level revenue. Do NOT use SUM(order_payments.payment_value) when joining with order_items — payment_value is order-level and causes double-counting across multiple items."
+  - "CATEGORY NAMES: products.product_category_name is in PORTUGUESE. To filter by English names (e.g. 'electronics', 'sports_leisure', 'books_general_interest'), you MUST JOIN product_category_name_translation ON products.product_category_name = pct.product_category_name and filter on pct.product_category_name_english. NEVER do WHERE product_category_name = 'electronics'."
+  - "DELIVERY TIME vs DELAY: Delivery time from purchase = julianday(order_delivered_customer_date) - julianday(order_purchase_timestamp). Do NOT subtract order_estimated_delivery_date — that gives delay (lateness), not delivery time."
+  - "LEADS DATE FILTER: When filtering leads by a time period via first_contact_date, do NOT also restrict leads_closed.won_date to the same period — a lead qualified in Q4 may close in a future quarter. Only filter won_date if the question explicitly asks for it."
+  - "PRODUCTS WITH NO REVIEWS: LEFT JOIN order_items ON product_id, then orders ON order_id, then order_reviews ON order_id, and filter WHERE order_reviews.review_id IS NULL. Do NOT use NOT IN (SELECT order_id FROM order_reviews) — that compares product_id to order_id."
+  - "DELIVERED ORDER COUNT: To count successfully delivered orders, filter WHERE order_status = 'delivered' AND order_delivered_customer_date IS NOT NULL."

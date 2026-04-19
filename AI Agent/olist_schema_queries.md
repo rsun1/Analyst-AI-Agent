@@ -46,19 +46,19 @@ ORDER BY order_month;
 
 ### definition: revenue_by_product_category
 
-Total revenue (payment_value) attributed to each product category. Uses the product’s category on the order item; multiple items per order share the order’s payment, so this is an approximation (payment split by item count or by item price share would refine it).
+Total item-level revenue (sum of order_items.price) per product category. Use order_items.price — NOT order_payments.payment_value — to avoid double-counting when an order has items in multiple categories. Join product_category_name_translation to return English category names.
 
 ### SQL query
 
 ```sql
 SELECT
-  p.product_category_name,
-  SUM(op.payment_value) AS revenue
-FROM orders o
-JOIN order_items oi ON oi.order_id = o.order_id
-JOIN order_payments op ON op.order_id = o.order_id
+  pct.product_category_name_english,
+  SUM(oi.price) AS revenue
+FROM order_items oi
 JOIN products p ON p.product_id = oi.product_id
-GROUP BY p.product_category_name
+JOIN product_category_name_translation pct
+  ON pct.product_category_name = p.product_category_name
+GROUP BY pct.product_category_name_english
 ORDER BY revenue DESC;
 ```
 
@@ -438,3 +438,45 @@ ORDER BY conversion_pct DESC;
 All date/datetime fields are stored as text; use `strftime` and `julianday` in SQLite for filtering and grouping by time.
 
 **Cross-domain bridge (critical):** There is NO direct join between `orders`/`customers` and `leads_qualified`/`leads_closed`. To connect them, always traverse: `orders → order_items (order_id) → leads_closed (seller_id) → leads_qualified (mql_id)`. The seller is the entity that exists in both domains.
+
+**English Names**
+Because this data is Brazilian e-Commerce, its product names, location information etc are in Brazilian. Users usually use English to ask questions and expect answers in English, not Brazilian. Be sure to link product name with `product_category_name_english` from the `product_category_name_translation` table. 
+`product_category_name` column contains Portuguese values only.
+Always JOIN `product_category_name_translation` to filter by English names.
+English filter column: `product_category_name_english`
+
+## Common columns and value
+### column: order_status
+Valid values: 'delivered', 'shipped', 'canceled', 'invoiced', 'processing', 'unavailable', 'approved'
+Most queries filter on 'delivered' for completed order analysis.
+
+### column: payment_type
+Valid values: 'credit_card', 'boleto', 'voucher', 'debit_card'
+Note: 'boleto' is a Brazilian bank slip payment method.
+
+### column: seller_state / customer_state
+Values are Brazilian state abbreviations: 'SP', 'RJ', 'MG', 'RS', etc.
+São Paulo = 'SP' — most common in this dataset.
+
+## other notes:
+### leads_qualified table
+first_contact_date = when the lead first entered the pipeline
+Use this column when filtering by when leads originated in a time period.
+
+### leads_closed table  
+won_date = when the deal was closed/won
+Use this column when filtering by when deals were completed.
+
+### Common pattern: counting distinct
+Sometimes you need to use count distinct instead of count, especially when joining multiple tables can cause duplications.
+For example, always use COUNT(DISTINCT product_id) when counting products across 
+order-level joins, as products appear multiple times across orders.
+
+### Revenue vs Payment Value
+- Use the column "price" = product price only, use for seller/product revenue analysis
+- Use the column "payment_value" = total customer payment including freight and vouchers
+
+### definition: delivery_delay_vs_estimate
+Days between ESTIMATED delivery date and ACTUAL delivery date (positive = late, negative = early).
+NOTE: This is NOT total delivery time from purchase. 
+For total delivery time use: order_delivered_customer_date - order_purchase_timestamp

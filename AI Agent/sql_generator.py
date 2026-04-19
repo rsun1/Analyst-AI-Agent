@@ -28,15 +28,97 @@ SQL:
 <single SQLite query>
 ```"""
 
+# ── Few-shot examples (injected into every system prompt) ─────────────────────
+# These show the correct SQL pattern for the most common failure modes.
+# Keep examples short — they are in addition to the schema catalog.
+
+_FEW_SHOT_EXAMPLES = """
+## WORKED EXAMPLES — follow these patterns exactly
+
+### Example 1: Filter by English product category name
+Question: "average price of products in the 'electronics' category"
+Key pattern: product_category_name in products is PORTUGUESE — always JOIN the translation table.
+```sql
+SELECT AVG(oi.price)
+FROM order_items oi
+JOIN products p ON p.product_id = oi.product_id
+JOIN product_category_name_translation pct
+  ON pct.product_category_name = p.product_category_name
+WHERE pct.product_category_name_english = 'electronics';
+```
+
+### Example 2: Revenue by category — use oi.price, not payment_value
+Question: "top 5 product categories by total revenue"
+Key pattern: SUM(order_items.price) for item-level revenue. Do NOT join order_payments for category revenue.
+```sql
+SELECT pct.product_category_name_english, SUM(oi.price) AS revenue
+FROM order_items oi
+JOIN products p ON p.product_id = oi.product_id
+JOIN product_category_name_translation pct
+  ON pct.product_category_name = p.product_category_name
+GROUP BY pct.product_category_name_english
+ORDER BY revenue DESC
+LIMIT 5;
+```
+
+### Example 3: Delivery time from purchase (not delay)
+Question: "average delivery time in days"
+Key pattern: julianday(delivered) - julianday(purchase_timestamp). Do NOT use order_estimated_delivery_date.
+```sql
+SELECT AVG(julianday(order_delivered_customer_date) - julianday(order_purchase_timestamp))
+FROM orders
+WHERE order_delivered_customer_date IS NOT NULL;
+```
+
+### Example 4: Leads qualified in a period — do NOT filter won_date
+Question: "conversion rate of leads qualified in Q4 2017"
+Key pattern: filter ONLY on leads_qualified.first_contact_date; NEVER add AND lc.won_date BETWEEN ... — a lead qualified in Q4 can close in any future quarter.
+```sql
+SELECT
+  COUNT(DISTINCT lq.mql_id) AS qualified,
+  COUNT(DISTINCT lc.mql_id) AS closed,
+  ROUND(1.0 * COUNT(DISTINCT lc.mql_id) / COUNT(DISTINCT lq.mql_id), 4) AS conversion_rate
+FROM leads_qualified lq
+LEFT JOIN leads_closed lc ON lc.mql_id = lq.mql_id
+WHERE lq.first_contact_date BETWEEN '2017-10-01' AND '2017-12-31';
+```
+
+### Example 4b: Average time to close leads by channel — still filter first_contact_date only
+Question: "average time from first contact to lead closed by origin channel in Q4 2017"
+Key pattern: INNER JOIN (only leads that were closed), filter first_contact_date only, compute julianday(won_date) - julianday(first_contact_date).
+```sql
+SELECT
+  lq.origin,
+  AVG(julianday(lc.won_date) - julianday(lq.first_contact_date)) AS avg_days_to_close
+FROM leads_qualified lq
+INNER JOIN leads_closed lc ON lc.mql_id = lq.mql_id
+WHERE lq.first_contact_date BETWEEN '2017-10-01' AND '2017-12-31'
+GROUP BY lq.origin
+ORDER BY avg_days_to_close ASC;
+```
+
+### Example 5: Products with zero reviews
+Question: "how many products have no reviews"
+Key pattern: LEFT JOIN through order_items → orders → order_reviews, filter on NULL review_id.
+```sql
+SELECT COUNT(DISTINCT p.product_id)
+FROM products p
+LEFT JOIN order_items oi ON oi.product_id = p.product_id
+LEFT JOIN orders o ON o.order_id = oi.order_id
+LEFT JOIN order_reviews r ON r.order_id = o.order_id
+WHERE r.review_id IS NULL;
+```
+"""
+
 # ── System prompts ─────────────────────────────────────────────────────────────
 
 def _build_system_prompt() -> str:
-    """Build the system prompt with the live schema embedded."""
+    """Build the system prompt with the live schema and few-shot examples embedded."""
     schema_block = render_live_schema_block()
     return f"""You are a SQL expert for the Olist Brazilian e-commerce SQLite database.
 
 {schema_block}
-
+{_FEW_SHOT_EXAMPLES}
 Rules:
 - Use ONLY the table and column names listed in the schema above. Never invent or guess names.
 - Use ONLY the FK relationships listed above for JOIN conditions.

@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import concurrent.futures
 
 import openai
 from dotenv import load_dotenv
@@ -17,10 +18,18 @@ def load_test_dataset(path="evals/test_dataset.json"):
         return json.load(f)
 
 
+def _is_empty_result(rows: list) -> bool:
+    """Return True if the result set is empty or contains only NULL values."""
+    if not rows:
+        return True
+    return all(all(v is None for v in row) for row in rows)
+
+
 def run_agent(question: str) -> tuple[str, str]:
     """
     Run the full agent pipeline on a question (auto-approving the SQL)
     and return (sql, summary).
+    Retries SQL generation once if the query executes but returns empty/null results.
     On failure, sql is "" and summary is an [ERROR: ...] string.
     """
     from agent_core import step_explain, step_execute, step_generate, step_rag
@@ -34,6 +43,24 @@ def run_agent(question: str) -> tuple[str, str]:
             return "", "[ERROR: No SQL was generated]"
         print("    • executing SQL...", flush=True)
         columns, rows, _ = step_execute(sql)
+
+        # Empty-result detection: retry once with a hint so the model can self-correct.
+        # Most common cause: filtering on Portuguese category name instead of using the
+        # translation table, or a wrong join that silently returns no rows.
+        if _is_empty_result(rows):
+            print("    • empty result — retrying with hint...", flush=True)
+            hint_question = (
+                f"{question}\n\n"
+                "[SYSTEM HINT: the previous attempt returned no rows. "
+                "If this question involves a product category name (e.g. 'electronics', "
+                "'sports_leisure'), make sure to JOIN product_category_name_translation "
+                "and filter on product_category_name_english, NOT product_category_name. "
+                "Re-check all join paths and column names.]"
+            )
+            sql, _ = step_generate(hint_question, rag_context)
+            if sql:
+                columns, rows, _ = step_execute(sql)
+
         print("    • generating insights...", flush=True)
         summary = step_explain(question, sql, columns, rows)
         return sql, summary
@@ -130,7 +157,10 @@ Score the agent's answer on two dimensions:
 
 1. FACTUAL_ACCURACY (PASS or FAIL):
    Do the key numbers and facts match the expected answer, even if phrased differently?
-   Apply the eval criteria (e.g. within 1%, exact match).
+   Apply the eval criteria strictly:
+   - "within 1%": compute the percentage difference. If ALL key numbers are within 1% of expected, answer PASS.
+   - "same as": the fact/category/direction must match exactly.
+   If the agent's numbers are within the tolerance even though phrased differently, answer PASS.
 
 2. ANSWER_QUALITY (1, 2, or 3):
    1 = Wrong or hallucinated — the answer contains incorrect facts or fabricated data
@@ -138,9 +168,13 @@ Score the agent's answer on two dimensions:
    3 = Correct and insightful — the answer is accurate and provides useful business context, \
 trends, or recommendations grounded in the data
 
+3. REASONING (one sentence): briefly explain why you gave this factual accuracy score, \
+especially if numbers differ or tolerance was applied.
+
 Reply in exactly this format, with no other text:
 FACTUAL_ACCURACY: PASS
-ANSWER_QUALITY: 3"""
+ANSWER_QUALITY: 3
+REASONING: <one sentence>"""
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -157,6 +191,7 @@ ANSWER_QUALITY: 3"""
 
     factual_accuracy = "FAIL"
     answer_quality = 1
+    reasoning = ""
     for line in content.splitlines():
         line = line.strip()
         if line.upper().startswith("FACTUAL_ACCURACY:"):
@@ -167,8 +202,10 @@ ANSWER_QUALITY: 3"""
                 answer_quality = int(line.split(":", 1)[1].strip())
             except ValueError:
                 answer_quality = 1
+        elif line.upper().startswith("REASONING:"):
+            reasoning = line.split(":", 1)[1].strip()
 
-    return {"factual_accuracy": factual_accuracy, "answer_quality": answer_quality, "reasoning": ""}
+    return {"factual_accuracy": factual_accuracy, "answer_quality": answer_quality, "reasoning": reasoning}
 
 
 def run_eval(
@@ -191,7 +228,15 @@ def run_eval(
         print(f"\n[{i}/{total}] [{test_id}] ({eval_type})", flush=True)
         print(f"  Q: {question}", flush=True)
 
-        agent_sql, agent_answer = run_agent(question)
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(run_agent, question)
+            try:
+                agent_sql, agent_answer = future.result(timeout=60)
+            except concurrent.futures.TimeoutError:
+                print("    • timeout exceeded!", flush=True)
+                agent_sql = ""
+                agent_answer = "[ERROR: Query exceeded 60 second time limit]"
+
         print("    • judging...", flush=True)
         scores = judge(question, expected_answer, agent_answer, eval_type, eval_criteria)
 
