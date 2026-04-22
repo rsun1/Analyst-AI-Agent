@@ -2,6 +2,16 @@
 
 Python application that lets stakeholders ask natural-language questions about the **olist.sqlite** database (Olist Brazilian e-commerce). The agent retrieves relevant schema context via RAG, proposes SQL with an explanation, and after approval runs the query and returns results plus plain-English business insights.
 
+# Why This Exists
+Most enterprise analytics teams can't use vector databases, open-source models, or send raw data to external APIs. Security policies, compliance requirements, and IT governance make the standard RAG tutorial stack unavailable by default.
+
+This agent was built under those exact constraints. RAG implemented from scratch using cosine similarity on markdown files, no LangChain or FAISS, schema injected as structured YAML, all query execution local and read-only. Not because these are the best tools for the job in an ideal environment, but because they're what's actually available in most locked-down enterprise deployments.
+
+The goal wasn't to build the most capable Text-to-SQL system. It was to build one that works reliably inside real constraints, and to measure that reliability rigorously enough to know when it's failing and why.
+
+That second part turned out to be as hard as the first. The eval harness went through three iterations before the scoring was trustworthy. Factual accuracy moved from 27.8% to 70.6%, not by making the agent smarter, but by diagnosing specific failure modes: wrong column references, Portuguese category names, date filter logic, judge scoring tolerance. Each fix was grounded in evidence from the eval, not intuition.
+The remaining failures are documented too. A system you can't honestly evaluate is a system you can't trust.
+
 ---
 
 ## Requirements
