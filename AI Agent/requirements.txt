@@ -20,3 +20,5 @@ google-generativeai
 
 # gRPC, for Google Generative AI preventing WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
 grpcio==1.70.0
+psycopg[binary]>=3.2
+pgvector>=0.3

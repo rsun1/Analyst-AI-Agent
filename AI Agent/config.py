@@ -20,6 +20,22 @@ CHAT_MODEL = "gpt-4o-mini"
 # Database: read-only SQLite (path configurable via .env)
 OLIST_DB_PATH = os.getenv("OLIST_DB_PATH") or str(BASE_DIR / "olist.sqlite")
 
+# Postgres (v2). Admin role owns tables/migrations; reader role is SELECT-only
+# and is the one the agent uses to execute generated SQL.
+PG_HOST = os.getenv("PG_HOST", "localhost")
+PG_PORT = os.getenv("PG_PORT", "5432")
+PG_DB = os.getenv("PG_DB", "olist")
+PG_ADMIN_USER = os.getenv("PG_ADMIN_USER", "olist_admin")
+PG_ADMIN_PASSWORD = os.getenv("PG_ADMIN_PASSWORD", "olist_admin_pw")
+PG_READER_USER = os.getenv("PG_READER_USER", "olist_reader")
+PG_READER_PASSWORD = os.getenv("PG_READER_PASSWORD", "olist_reader_pw")
+PG_ADMIN_DSN = os.getenv("PG_ADMIN_DSN") or (
+    f"postgresql://{PG_ADMIN_USER}:{PG_ADMIN_PASSWORD}@{PG_HOST}:{PG_PORT}/{PG_DB}"
+)
+PG_READER_DSN = os.getenv("PG_READER_DSN") or (
+    f"postgresql://{PG_READER_USER}:{PG_READER_PASSWORD}@{PG_HOST}:{PG_PORT}/{PG_DB}"
+)
+
 # Schema & RAG
 SCHEMA_DOC_PATH = os.getenv("SCHEMA_DOC_PATH") or str(BASE_DIR / "olist_schema_queries.md")
 EMBEDDINGS_STORE_PATH = os.getenv("EMBEDDINGS_STORE_PATH") or str(BASE_DIR / "embeddings_store.json")
