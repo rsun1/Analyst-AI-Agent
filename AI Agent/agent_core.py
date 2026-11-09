@@ -2,15 +2,15 @@
 Pure-function wrappers for each agent step.
 No CLI I/O here — usable by both app.py (Streamlit) and agent.py (CLI).
 """
-import sqlite3
+import psycopg
 
 from config import MAX_SQL_RETRIES
-from db import execute_query
+from db import RETRYABLE_ERRORS, execute_query
 from insights import explain_results
 from rag import retrieve
 from schema_loader import render_live_schema_block
 from sql_correction import get_corrected_sql
-from sql_errors import classify_sqlite_error
+from sql_errors import classify_db_error
 from sql_generator import UNCLEAR_INSTRUCTION, generate_sql_and_explanation, revise_sql
 
 
@@ -18,11 +18,11 @@ def step_introspect_schema(db_path: str | None = None) -> str:
     """
     Introspect the live database and return a schema block for LLM injection.
 
-    Queries SQLite directly (via PRAGMA table_info) to get the ground-truth
+    Queries Postgres directly (via information_schema) to get the ground-truth
     table and column names, then enriches them with notes, enums, FK
     relationships, cross-domain paths, and pitfalls from schema_catalog.yml.
 
-    The result is cached after the first call — SQLite schema is static at
+    The result is cached after the first call — the schema is static at
     runtime, so there is no cost to calling this repeatedly.
     """
     return render_live_schema_block(db_path)
@@ -71,10 +71,12 @@ def step_execute(sql: str) -> tuple[list[str], list[tuple], list[str]]:
         try:
             columns, rows = execute_query(current_sql)
             return columns, rows, db_errors
-        except sqlite3.OperationalError as e:
+        except RETRYABLE_ERRORS as e:
+            if isinstance(e, psycopg.errors.InsufficientPrivilege):
+                raise
             last_error = str(e)
             db_errors.append(last_error)
-            classified = classify_sqlite_error(e)
+            classified = classify_db_error(e)
             if attempt < MAX_SQL_RETRIES:
                 current_sql = get_corrected_sql(
                     current_sql, last_error, rag_context, classified=classified

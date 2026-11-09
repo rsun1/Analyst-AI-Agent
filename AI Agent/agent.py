@@ -2,17 +2,17 @@
 Analytics AI Agent: CLI flow.
 Ask question → RAG → propose SQL + explanation → approve/edit loop → execute → insights.
 """
-import sqlite3
+import psycopg
 import sys
 
 from config import MAX_EDIT_ATTEMPTS, MAX_SQL_RETRIES, OLIST_DB_PATH
-from db import execute_query
+from db import RETRYABLE_ERRORS, execute_query
 from insights import explain_results
 from rag import retrieve
 from agent_core import step_introspect_schema
 from schema_loader import validate_catalog_against_db
 from sql_correction import get_corrected_sql
-from sql_errors import classify_sqlite_error
+from sql_errors import classify_db_error
 from sql_generator import UNCLEAR_INSTRUCTION, generate_sql_and_explanation, revise_sql
 
 
@@ -133,9 +133,11 @@ def run_agent_loop(question: str | None = None) -> None:
         try:
             columns, rows = execute_query(current_sql)
             break
-        except sqlite3.OperationalError as e:
+        except RETRYABLE_ERRORS as e:
+            if isinstance(e, psycopg.errors.InsufficientPrivilege):
+                raise
             last_error = str(e)
-            classified = classify_sqlite_error(e)
+            classified = classify_db_error(e)
             if attempt < MAX_SQL_RETRIES:
                 print(f"\nQuery failed ({classified.kind}): {last_error}")
                 print("Requesting corrected SQL from model...")

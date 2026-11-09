@@ -2,17 +2,16 @@
 Load schema_catalog.yml and render it as a compact, LLM-readable text block
 for injection into SQL generation prompts.
 
-Optionally validates the YAML catalog against the live SQLite database using
-PRAGMA table_info() so that catalog drift is detected early at startup.
+Optionally validates the YAML catalog against the live database using
+information_schema so that catalog drift is detected early at startup.
 """
-import sqlite3
 import warnings
 from functools import lru_cache
 from pathlib import Path
 
 import yaml
 
-from config import OLIST_DB_PATH, SCHEMA_CATALOG_PATH
+from config import SCHEMA_CATALOG_PATH
 
 
 # ── Load & render ─────────────────────────────────────────────────────────────
@@ -110,10 +109,10 @@ def render_live_schema_block(
     pitfalls from schema_catalog.yml.
 
     This is the primary schema source injected into every LLM prompt.
-    Using the live DB (via PRAGMA table_info) ensures the LLM always sees the
+    Using the live DB (via information_schema) ensures the LLM always sees the
     real column names and cannot hallucinate based on a stale YAML file.
 
-    Cached after first call — SQLite schema is static at runtime.
+    Cached after first call — the schema is static at runtime.
     """
     from db import get_live_schema  # local import avoids top-level circular-import risk
 
@@ -179,59 +178,53 @@ def render_live_schema_block(
     return "\n".join(lines)
 
 
-# ── PRAGMA drift validation ───────────────────────────────────────────────────
+# ── Schema drift validation ───────────────────────────────────────────────────
 
 def validate_catalog_against_db(
     db_path: str | None = None,
     catalog_path: str | None = None,
 ) -> list[str]:
     """
-    Cross-check the YAML catalog against the live database using PRAGMA table_info().
+    Cross-check the YAML catalog against the live database using information_schema.
     Returns a list of drift warning strings (empty list = no drift detected).
     Emits Python warnings for each discrepancy so they surface at startup without crashing.
     """
     catalog = load_catalog(catalog_path)
     tables_in_catalog: dict = catalog.get("tables", {})
 
-    path = Path(db_path or OLIST_DB_PATH).resolve()
-    if not path.exists():
-        return [f"Database not found for drift check: {path}"]
+    from db import get_live_schema
 
-    uri = f"file:{path}?mode=ro"
-    conn = sqlite3.connect(uri, uri=True)
     try:
-        cur = conn.cursor()
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-        db_tables = {row[0] for row in cur.fetchall()}
+        live = get_live_schema(db_path)
+    except Exception as e:  # DB unreachable
+        return [f"Database not reachable for drift check: {e}"]
+    db_tables = set(live)
 
-        drift: list[str] = []
+    drift: list[str] = []
 
-        for table_name, tdef in tables_in_catalog.items():
-            if table_name not in db_tables:
-                msg = f"[schema drift] Table '{table_name}' is in catalog but not in the database."
-                drift.append(msg)
-                warnings.warn(msg, stacklevel=2)
-                continue
+    for table_name, tdef in tables_in_catalog.items():
+        if table_name not in db_tables:
+            msg = f"[schema drift] Table '{table_name}' is in catalog but not in the database."
+            drift.append(msg)
+            warnings.warn(msg, stacklevel=2)
+            continue
 
-            cur.execute(f'PRAGMA table_info("{table_name}")')
-            db_columns = {row[1] for row in cur.fetchall()}
-            catalog_columns = set(tdef.get("columns", {}).keys())
+        db_columns = {c["name"] for c in live[table_name]}
+        catalog_columns = set(tdef.get("columns", {}).keys())
 
-            for col in catalog_columns - db_columns:
-                msg = f"[schema drift] Column '{table_name}.{col}' is in catalog but not in the database."
-                drift.append(msg)
-                warnings.warn(msg, stacklevel=2)
-
-            for col in db_columns - catalog_columns:
-                msg = f"[schema drift] Column '{table_name}.{col}' exists in database but is missing from catalog."
-                drift.append(msg)
-                warnings.warn(msg, stacklevel=2)
-
-        for tbl in db_tables - set(tables_in_catalog.keys()):
-            msg = f"[schema drift] Table '{tbl}' exists in database but is missing from catalog."
+        for col in catalog_columns - db_columns:
+            msg = f"[schema drift] Column '{table_name}.{col}' is in catalog but not in the database."
             drift.append(msg)
             warnings.warn(msg, stacklevel=2)
 
-        return drift
-    finally:
-        conn.close()
+        for col in db_columns - catalog_columns:
+            msg = f"[schema drift] Column '{table_name}.{col}' exists in database but is missing from catalog."
+            drift.append(msg)
+            warnings.warn(msg, stacklevel=2)
+
+    for tbl in db_tables - set(tables_in_catalog.keys()):
+        msg = f"[schema drift] Table '{tbl}' exists in database but is missing from catalog."
+        drift.append(msg)
+        warnings.warn(msg, stacklevel=2)
+
+    return drift
