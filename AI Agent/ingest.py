@@ -1,6 +1,6 @@
 """
 Phase 1: Ingest olist_schema_queries.md (metric definitions) AND schema_catalog.yml
-(table-level schema chunks), generate embeddings via OpenAI, and store in a local JSON file.
+(table-level schema chunks), generate embeddings via OpenAI, and store them in Postgres (pgvector table schema_chunks).
 
 Two chunk sources are merged:
   1. olist_schema_queries.md  — pre-defined metric definitions + sample SQL queries
@@ -10,16 +10,19 @@ Two chunk sources are merged:
 This ensures retrieval works for arbitrary questions (matching relevant tables/columns)
 not just questions that happen to be semantically close to a pre-defined metric name.
 """
-import json
 from pathlib import Path
 
+import psycopg
 import yaml
 from openai import OpenAI
+from pgvector.psycopg import register_vector
 
 from config import (
     EMBEDDING_MODEL,
-    EMBEDDINGS_STORE_PATH,
     OPENAI_API_KEY,
+    PG_ADMIN_DSN,
+    PG_DB,
+    PG_READER_USER,
     SCHEMA_CATALOG_PATH,
     SCHEMA_DOC_PATH,
 )
@@ -132,17 +135,34 @@ def get_embeddings(client: OpenAI, chunks: list[str]) -> list[list[float]]:
     return [by_index[i] for i in range(len(chunks))]
 
 
+def store_chunks_pg(chunks: list[str], embeddings: list[list[float]]) -> None:
+    """Replace the contents of schema_chunks (pgvector) with the given chunks."""
+    with psycopg.connect(PG_ADMIN_DSN) as conn:
+        conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        register_vector(conn)
+        conn.execute("DROP TABLE IF EXISTS schema_chunks")
+        conn.execute(
+            f"CREATE TABLE schema_chunks (id SERIAL PRIMARY KEY, text TEXT NOT NULL, "
+            f"embedding vector({len(embeddings[0])}) NOT NULL)"
+        )
+        with conn.cursor() as cur:
+            cur.executemany(
+                "INSERT INTO schema_chunks (text, embedding) VALUES (%s, %s)",
+                list(zip(chunks, embeddings, strict=True)),
+            )
+        conn.execute(f'GRANT SELECT ON schema_chunks TO "{PG_READER_USER}"')
+        conn.commit()
+
+
 def run_ingest(
     schema_path: str | Path | None = None,
-    store_path: str | Path | None = None,
     catalog_path: str | Path | None = None,
 ) -> str:
     """
-    Read metric definitions doc + schema catalog, chunk both, embed, and save to JSON store.
-    Returns the path to the written store file.
+    Read metric definitions doc + schema catalog, chunk both, embed, and save to the pgvector table.
+    Returns a short description of where the chunks were stored.
     """
     schema_path = schema_path or SCHEMA_DOC_PATH
-    store_path = store_path or EMBEDDINGS_STORE_PATH
 
     path = Path(schema_path)
     if not path.exists():
@@ -161,30 +181,12 @@ def run_ingest(
     client = OpenAI(api_key=OPENAI_API_KEY)
     embeddings = get_embeddings(client, chunks)
 
-    store = {
-        "chunks": [
-            {"text": chunk, "embedding": emb}
-            for chunk, emb in zip(chunks, embeddings, strict=True)
-        ]
-    }
-
-    out = Path(store_path)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with open(out, "w", encoding="utf-8") as f:
-        json.dump(store, f, ensure_ascii=False, indent=2)
-
-    return str(out)
+    store_chunks_pg(chunks, embeddings)
+    return f"postgres:{PG_DB}.schema_chunks ({len(chunks)} chunks)"
 
 
 if __name__ == "__main__":
     import sys
 
-    schema = None
-    store = None
-    if len(sys.argv) > 1:
-        schema = sys.argv[1]
-    if len(sys.argv) > 2:
-        store = sys.argv[2]
-
-    out_path = run_ingest(schema_path=schema, store_path=store)
-    print(f"Ingestion complete. Embeddings saved to: {out_path}")
+    schema = sys.argv[1] if len(sys.argv) > 1 else None
+    print(f"Ingestion complete. Embeddings saved to: {run_ingest(schema_path=schema)}")
