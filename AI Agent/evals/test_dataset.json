@@ -50,8 +50,8 @@
   {
     "id": "007",
     "question": "What is the total revenue generated from orders placed in 2017?",
-    "expected_sql": "SELECT SUM(price) FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.order_purchase_timestamp BETWEEN '2017-01-01' AND '2017-12-31'",
-    "expected_answer_english": "Total revenue generated from orders placed in 2017 is approximately 7.24 million Brazilian Reais.",
+    "expected_sql": "SELECT SUM(price) FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.order_purchase_timestamp >= '2017-01-01' AND o.order_purchase_timestamp < '2018-01-01'",
+    "expected_answer_english": "Total revenue generated from orders placed in 2017 (sum of order_items.price) is approximately 6.16 million Brazilian Reais.",
     "eval_type": "answer_verification",
     "eval_criteria": "Agent's answer should be within 1% of the expected answer."
   },
@@ -74,8 +74,8 @@
   {
     "id": "010",
     "question": "How many orders were delivered successfully in July 2017, and is that more or less than the previous month?",
-    "expected_sql": "SELECT strftime('%Y-%m', order_purchase_timestamp) AS order_month, COUNT(*) AS order_count FROM orders WHERE order_status = 'delivered' AND order_purchase_timestamp BETWEEN '2017-06-01' AND '2017-07-31' GROUP BY order_month ORDER BY order_month",
-    "expected_answer_english": "In July 2017, successfully delivered orders were 3729, higher than in June 2017.",
+    "expected_sql": "SELECT TO_CHAR(order_delivered_customer_date, 'YYYY-MM') AS delivery_month, COUNT(*) AS delivered_count FROM orders WHERE order_status = 'delivered' AND order_delivered_customer_date >= '2017-06-01' AND order_delivered_customer_date < '2017-08-01' GROUP BY delivery_month ORDER BY delivery_month",
+    "expected_answer_english": "In July 2017, 3455 orders were successfully delivered (by delivery date), higher than the 3223 delivered in June 2017.",
     "eval_type": "answer_verification",
     "eval_criteria": "Agent's answer should be within 1% of the expected answer."
   },
