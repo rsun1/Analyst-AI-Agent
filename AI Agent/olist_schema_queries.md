@@ -1,6 +1,6 @@
-# Olist SQLite: Schema, Definitions & Sample Queries
+# Olist PostgreSQL: Schema, Definitions & Sample Queries
 
-This document defines metrics and logic for the **olist.sqlite** dataset (Olist Brazilian e‑commerce) and provides sample SQL queries. All queries are written for **SQLite** (e.g. use `strftime` for dates, not `date_trunc`).
+This document defines metrics and logic for the **olist** dataset (Olist Brazilian e‑commerce) and provides sample SQL queries. All queries are written for **PostgreSQL** (date columns are `TIMESTAMP`: use `TO_CHAR`/`DATE_TRUNC`/`EXTRACT`, not `strftime`/`julianday`).
 
 ---
 
@@ -15,7 +15,7 @@ Total sales (TPV = total payment value) for each seller per month, based on `ord
 ```sql
 SELECT
   oi.seller_id,
-  strftime('%Y-%m', o.order_purchase_timestamp) AS order_month,
+  TO_CHAR(o.order_purchase_timestamp, 'YYYY-MM') AS order_month,
   SUM(op.payment_value) AS tpv
 FROM orders o
 LEFT JOIN order_payments op ON op.order_id = o.order_id
@@ -34,7 +34,7 @@ Gross merchandise value per month: total `payment_value` from `order_payments` p
 
 ```sql
 SELECT
-  strftime('%Y-%m', o.order_purchase_timestamp) AS order_month,
+  TO_CHAR(o.order_purchase_timestamp, 'YYYY-MM') AS order_month,
   SUM(op.payment_value) AS gmv
 FROM orders o
 LEFT JOIN order_payments op ON op.order_id = o.order_id
@@ -91,7 +91,7 @@ Count of orders per calendar month (by `order_purchase_timestamp`).
 
 ```sql
 SELECT
-  strftime('%Y-%m', order_purchase_timestamp) AS order_month,
+  TO_CHAR(order_purchase_timestamp, 'YYYY-MM') AS order_month,
   COUNT(*) AS order_count
 FROM orders
 GROUP BY order_month
@@ -131,7 +131,7 @@ Total amount and share of sales by `payment_type` (e.g. credit_card, boleto).
 SELECT
   op.payment_type,
   SUM(op.payment_value) AS total_value,
-  ROUND(100.0 * SUM(op.payment_value) / (SELECT SUM(payment_value) FROM order_payments), 2) AS pct
+  ROUND((100.0 * SUM(op.payment_value) / (SELECT SUM(payment_value) FROM order_payments))::numeric, 2) AS pct
 FROM order_payments op
 GROUP BY op.payment_type
 ORDER BY total_value DESC;
@@ -185,7 +185,7 @@ Average review score per calendar month (by review creation date).
 
 ```sql
 SELECT
-  strftime('%Y-%m', review_creation_date) AS review_month,
+  TO_CHAR(review_creation_date, 'YYYY-MM') AS review_month,
   AVG(review_score) AS avg_score,
   COUNT(*) AS review_count
 FROM order_reviews
@@ -225,7 +225,7 @@ SELECT
   order_id,
   order_estimated_delivery_date,
   order_delivered_customer_date,
-  julianday(order_delivered_customer_date) - julianday(order_estimated_delivery_date) AS delay_days
+  EXTRACT(EPOCH FROM (order_delivered_customer_date - order_estimated_delivery_date)) / 86400.0 AS delay_days
 FROM orders
 WHERE order_delivered_customer_date IS NOT NULL
   AND order_estimated_delivery_date IS NOT NULL
@@ -435,7 +435,7 @@ ORDER BY conversion_pct DESC;
 | leads_qualified | leads_closed | `leads_closed.mql_id` = `leads_qualified.mql_id` |
 | leads_closed    | sellers      | `leads_closed.seller_id` = `sellers.seller_id` — **this is the bridge between orders and leads** |
 
-All date/datetime fields are stored as text; use `strftime` and `julianday` in SQLite for filtering and grouping by time.
+All date/datetime fields are `TIMESTAMP`; use `TO_CHAR`, `DATE_TRUNC` and `EXTRACT(EPOCH FROM (a - b)) / 86400.0` in PostgreSQL for filtering and grouping by time.
 
 **Cross-domain bridge (critical):** There is NO direct join between `orders`/`customers` and `leads_qualified`/`leads_closed`. To connect them, always traverse: `orders → order_items (order_id) → leads_closed (seller_id) → leads_qualified (mql_id)`. The seller is the entity that exists in both domains.
 

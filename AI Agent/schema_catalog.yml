@@ -1,8 +1,8 @@
-# Olist SQLite - Definitive Schema Catalog
+# Olist PostgreSQL - Definitive Schema Catalog
 # Source of truth for exact table/column names, data types, FK relationships, and enums.
 # Injected verbatim into every SQL generation prompt so the model never guesses names.
-# All date/datetime columns are stored as TEXT ("YYYY-MM-DD HH:MM:SS").
-# Use strftime() and julianday() for date arithmetic in SQLite (never date_trunc/DATEPART).
+# All date/datetime columns are TIMESTAMP (migrated from TEXT in the SQLite v1).
+# Use TO_CHAR()/DATE_TRUNC()/EXTRACT() for date logic in PostgreSQL (never strftime/julianday).
 
 tables:
 
@@ -20,19 +20,19 @@ tables:
         enum: [approved, canceled, created, delivered, invoiced, processing, shipped, unavailable]
       order_purchase_timestamp:
         type: TEXT
-        note: "datetime string; use strftime('%Y-%m', ...) to group by month"
+        note: "timestamp; use TO_CHAR(col, 'YYYY-MM') to group by month"
       order_approved_at:
         type: TEXT
-        note: "datetime string; nullable"
+        note: "timestamp; nullable"
       order_delivered_carrier_date:
         type: TEXT
-        note: "datetime string; nullable"
+        note: "timestamp; nullable"
       order_delivered_customer_date:
         type: TEXT
-        note: "datetime string; nullable"
+        note: "timestamp; nullable"
       order_estimated_delivery_date:
         type: TEXT
-        note: "datetime string; nullable"
+        note: "timestamp; nullable"
 
   customers:
     description: "One row per customer_id. A single person may have multiple customer_ids."
@@ -68,7 +68,7 @@ tables:
         note: "FK to sellers.seller_id"
       shipping_limit_date:
         type: TEXT
-        note: "datetime string"
+        note: "timestamp"
       price:
         type: REAL
         note: "item price in BRL"
@@ -115,10 +115,10 @@ tables:
         note: "nullable"
       review_creation_date:
         type: TEXT
-        note: "datetime string; use this for time-based grouping of reviews"
+        note: "timestamp; use this for time-based grouping of reviews"
       review_answer_timestamp:
         type: TEXT
-        note: "datetime string; nullable"
+        note: "timestamp; nullable"
 
   products:
     description: "Product catalogue. One row per product_id."
@@ -193,7 +193,7 @@ tables:
         note: "primary key"
       first_contact_date:
         type: TEXT
-        note: "date string"
+        note: "timestamp"
       landing_page_id:
         type: TEXT
       origin:
@@ -217,7 +217,7 @@ tables:
         note: "sales rep ID"
       won_date:
         type: TEXT
-        note: "date string"
+        note: "timestamp"
       business_segment:
         type: TEXT
         enum: [air_conditioning, audio_video_electronics, baby, bags_backpacks, bed_bath_table, books, car_accessories, computers, construction_tools_house_garden, fashion_accessories, food_drink, food_supplement, games_consoles, gifts, handcrafted, health_beauty, home_appliances, home_decor, home_office_furniture, household_utilities, jewerly, music_instruments, other, party, perfume, pet, phone_mobile, religious, small_appliances, sports_leisure, stationery, toys, watches]
@@ -317,14 +317,14 @@ pitfalls:
   - "Join to customers using orders.customer_id = customers.customer_id, NOT customer_unique_id."
   - "order_items has no payment or review columns — always join through orders to reach order_payments or order_reviews."
   - "The column names product_name_lenght and product_description_lenght are intentionally misspelled in the database — use exactly these spellings."
-  - "All date columns are TEXT. Use strftime('%Y-%m', col) to group by month, julianday() for day differences."
+  - "All date columns are TIMESTAMP. Use TO_CHAR(col, 'YYYY-MM') to group by month, and EXTRACT(EPOCH FROM (a - b)) / 86400.0 for day differences."
   - "order_payments can have multiple rows per order_id. Use SUM(payment_value) and GROUP BY order_id before joining to avoid row multiplication."
   - "There is NO direct join between orders/customers and leads_qualified/leads_closed. The only bridge is seller_id: orders -> order_items -> leads_closed -> leads_qualified."
   - "Do NOT join leads_qualified to orders on a date or NULL condition. leads_qualified has no order_id column."
   - "When counting leads linked to orders, use COUNT(DISTINCT lq.mql_id) or COUNT(DISTINCT lc.seller_id) to avoid row multiplication from multiple items per order."
   - "REVENUE BY CATEGORY: Use SUM(order_items.price) for item-level revenue. Do NOT use SUM(order_payments.payment_value) when joining with order_items — payment_value is order-level and causes double-counting across multiple items."
   - "CATEGORY NAMES: products.product_category_name is in PORTUGUESE. To filter by English names (e.g. 'electronics', 'sports_leisure', 'books_general_interest'), you MUST JOIN product_category_name_translation ON products.product_category_name = pct.product_category_name and filter on pct.product_category_name_english. NEVER do WHERE product_category_name = 'electronics'."
-  - "DELIVERY TIME vs DELAY: Delivery time from purchase = julianday(order_delivered_customer_date) - julianday(order_purchase_timestamp). Do NOT subtract order_estimated_delivery_date — that gives delay (lateness), not delivery time."
+  - "DELIVERY TIME vs DELAY: Delivery time from purchase = EXTRACT(EPOCH FROM (order_delivered_customer_date - order_purchase_timestamp)) / 86400.0. Do NOT subtract order_estimated_delivery_date — that gives delay (lateness), not delivery time."
   - "LEADS DATE FILTER: When filtering leads by a time period via first_contact_date, do NOT also restrict leads_closed.won_date to the same period — a lead qualified in Q4 may close in a future quarter. Only filter won_date if the question explicitly asks for it."
   - "PRODUCTS WITH NO REVIEWS: LEFT JOIN order_items ON product_id, then orders ON order_id, then order_reviews ON order_id, and filter WHERE order_reviews.review_id IS NULL. Do NOT use NOT IN (SELECT order_id FROM order_reviews) — that compares product_id to order_id."
   - "DELIVERED ORDER COUNT: To count successfully delivered orders, filter WHERE order_status = 'delivered' AND order_delivered_customer_date IS NOT NULL."

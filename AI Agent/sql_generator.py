@@ -25,7 +25,7 @@ EXPLANATION:
 
 SQL:
 ```sql
-<single SQLite query>
+<single PostgreSQL query>
 ```"""
 
 # ── Few-shot examples (injected into every system prompt) ─────────────────────
@@ -63,9 +63,9 @@ LIMIT 5;
 
 ### Example 3: Delivery time from purchase (not delay)
 Question: "average delivery time in days"
-Key pattern: julianday(delivered) - julianday(purchase_timestamp). Do NOT use order_estimated_delivery_date.
+Key pattern: EXTRACT(EPOCH FROM (delivered - purchase_timestamp)) / 86400.0. Do NOT use order_estimated_delivery_date.
 ```sql
-SELECT AVG(julianday(order_delivered_customer_date) - julianday(order_purchase_timestamp))
+SELECT AVG(EXTRACT(EPOCH FROM (order_delivered_customer_date - order_purchase_timestamp)) / 86400.0)
 FROM orders
 WHERE order_delivered_customer_date IS NOT NULL;
 ```
@@ -85,11 +85,11 @@ WHERE lq.first_contact_date BETWEEN '2017-10-01' AND '2017-12-31';
 
 ### Example 4b: Average time to close leads by channel — still filter first_contact_date only
 Question: "average time from first contact to lead closed by origin channel in Q4 2017"
-Key pattern: INNER JOIN (only leads that were closed), filter first_contact_date only, compute julianday(won_date) - julianday(first_contact_date).
+Key pattern: INNER JOIN (only leads that were closed), filter first_contact_date only, compute EXTRACT(EPOCH FROM (won_date - first_contact_date)) / 86400.0.
 ```sql
 SELECT
   lq.origin,
-  AVG(julianday(lc.won_date) - julianday(lq.first_contact_date)) AS avg_days_to_close
+  AVG(EXTRACT(EPOCH FROM (lc.won_date - lq.first_contact_date)) / 86400.0) AS avg_days_to_close
 FROM leads_qualified lq
 INNER JOIN leads_closed lc ON lc.mql_id = lq.mql_id
 WHERE lq.first_contact_date BETWEEN '2017-10-01' AND '2017-12-31'
@@ -115,14 +115,14 @@ WHERE r.review_id IS NULL;
 def _build_system_prompt() -> str:
     """Build the system prompt with the live schema and few-shot examples embedded."""
     schema_block = render_live_schema_block()
-    return f"""You are a SQL expert for the Olist Brazilian e-commerce SQLite database.
+    return f"""You are a SQL expert for the Olist Brazilian e-commerce PostgreSQL database.
 
 {schema_block}
 {_FEW_SHOT_EXAMPLES}
 Rules:
 - Use ONLY the table and column names listed in the schema above. Never invent or guess names.
 - Use ONLY the FK relationships listed above for JOIN conditions.
-- Generate valid SQLite SQL (strftime for date grouping, julianday for date differences).
+- Generate valid PostgreSQL SQL (date columns are TIMESTAMP: use TO_CHAR(col, 'YYYY-MM') or DATE_TRUNC for grouping, and EXTRACT(EPOCH FROM (a - b)) / 86400.0 for day differences). Round with ROUND(x::numeric, n).
 - Output exactly one SQL query and a short explanation.
 - If a CONVERSATION HISTORY block is present in the user message, use it to understand
   follow-up references (e.g. "break that down", "now filter by..."). If the current
@@ -133,8 +133,8 @@ Rules:
 def _build_revise_system_prompt() -> str:
     """System prompt for the SQL revision (edit-loop) path."""
     schema_block = render_live_schema_block()
-    return f"""You are a SQL expert for the Olist Brazilian e-commerce SQLite database.
-The user has reviewed a proposed SQLite query and requested a change.
+    return f"""You are a SQL expert for the Olist Brazilian e-commerce PostgreSQL database.
+The user has reviewed a proposed PostgreSQL query and requested a change.
 
 {schema_block}
 
@@ -142,7 +142,7 @@ Rules:
 - Apply the user's requested change to the existing SQL.
 - Use ONLY the table and column names listed in the schema above. Never invent or guess names.
 - Use ONLY the FK relationships listed above for JOIN conditions.
-- Generate valid SQLite SQL (strftime for date grouping, julianday for date differences).
+- Generate valid PostgreSQL SQL (date columns are TIMESTAMP: use TO_CHAR(col, 'YYYY-MM') or DATE_TRUNC for grouping, and EXTRACT(EPOCH FROM (a - b)) / 86400.0 for day differences). Round with ROUND(x::numeric, n).
 - If the user's instruction is too vague, contradictory, or does not clearly specify a SQL
   change, respond with exactly the word UNCLEAR on a line by itself, and nothing else.
 - Otherwise respond in the format below.
@@ -186,7 +186,7 @@ def generate_sql_and_explanation(
     conversation_history: list[dict] | None = None,
 ) -> tuple[str, str]:
     """
-    Generate a SQLite query and explanation for the given question.
+    Generate a PostgreSQL query and explanation for the given question.
 
     The system prompt always contains the full schema catalog (ground truth).
     The user message adds RAG-retrieved metric definitions and query patterns.
@@ -215,7 +215,7 @@ def generate_sql_and_explanation(
 
 User question: {question}
 
-Provide one SQLite query and a short explanation."""
+Provide one PostgreSQL query and a short explanation."""
 
     client = OpenAI(api_key=OPENAI_API_KEY)
     response = client.chat.completions.create(

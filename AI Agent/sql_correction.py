@@ -7,9 +7,9 @@ from openai import OpenAI
 
 from config import CHAT_MODEL, OPENAI_API_KEY
 from schema_loader import render_live_schema_block
-from sql_errors import ClassifiedError, classify_sqlite_error
+from sql_errors import ClassifiedError, classify_db_error
 
-CORRECTION_PROMPT = """The following SQLite query failed.
+CORRECTION_PROMPT = """The following PostgreSQL query failed.
 
 Failed query:
 ```sql
@@ -18,14 +18,14 @@ Failed query:
 
 {error_section}
 
-Using ONLY the table and column names in the schema above, provide a corrected SQLite query.
+Using ONLY the table and column names in the schema above, provide a corrected PostgreSQL query.
 Output nothing but the SQL, optionally inside a ```sql code block. Do not explain."""
 
 
 def _build_correction_system_prompt(emphasize_schema: bool = False) -> str:
     schema_block = render_live_schema_block()
     base = (
-        "You fix SQLite errors. "
+        "You fix PostgreSQL errors. "
         + ("The database reported a missing column or table. " if emphasize_schema else "")
         + "You MUST use ONLY table and column names listed in the schema below. "
         "Do NOT invent or guess any names. Reply with only the corrected SQL."
@@ -44,13 +44,13 @@ def get_corrected_sql(
     Ask the model for a corrected SQL given the failed query and DB error.
     The full schema catalog is injected in the system prompt (always-on).
     RAG context is still included for query-pattern guidance.
-    classified (from classify_sqlite_error) provides a structured error hint.
+    classified (from classify_db_error) provides a structured error hint.
     """
     if not OPENAI_API_KEY:
         raise ValueError("OPENAI_API_KEY is not set in .env")
 
     if classified is None:
-        classified = classify_sqlite_error(Exception(error_message))
+        classified = classify_db_error(Exception(error_message))
 
     is_schema_error = classified.kind in ("missing_column", "missing_table")
     system = _build_correction_system_prompt(emphasize_schema=is_schema_error)
