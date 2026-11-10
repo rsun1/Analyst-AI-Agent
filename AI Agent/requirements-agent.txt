@@ -6,3 +6,5 @@ pyyaml>=6.0
 streamlit>=1.32.0
 plotly>=5.0
 pandas>=2.0.0
+psycopg[binary]>=3.2
+pgvector>=0.3
