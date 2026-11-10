@@ -341,7 +341,7 @@ JOIN customers c    ON c.customer_id  = o.customer_id
 JOIN order_items oi ON oi.order_id    = o.order_id
 JOIN leads_closed lc ON lc.seller_id  = oi.seller_id
 JOIN leads_qualified lq ON lq.mql_id  = lc.mql_id
-WHERE o.order_purchase_timestamp BETWEEN '2017-07-01' AND '2017-08-31'
+WHERE o.order_purchase_timestamp >= '2017-07-01' AND o.order_purchase_timestamp < '2017-09-01'
   AND c.customer_state IN ('BA', 'MA', 'SP');
 
 -- Part 2: total leads ever contacted (all-time, no date or state filter)
@@ -366,7 +366,7 @@ JOIN customers c     ON c.customer_id  = o.customer_id
 JOIN order_items oi  ON oi.order_id    = o.order_id
 JOIN leads_closed lc ON lc.seller_id   = oi.seller_id
 JOIN leads_qualified lq ON lq.mql_id   = lc.mql_id
-WHERE o.order_purchase_timestamp BETWEEN '2017-07-01' AND '2017-08-31'
+WHERE o.order_purchase_timestamp >= '2017-07-01' AND o.order_purchase_timestamp < '2017-09-01'
   AND c.customer_state IN ('BA', 'MA', 'SP');
 ```
 
@@ -388,7 +388,7 @@ FROM orders o
 JOIN order_items oi   ON oi.order_id  = o.order_id
 JOIN order_payments op ON op.order_id = o.order_id
 LEFT JOIN leads_closed lc ON lc.seller_id = oi.seller_id
-WHERE o.order_purchase_timestamp BETWEEN '2017-01-01' AND '2017-12-31'
+WHERE o.order_purchase_timestamp >= '2017-01-01' AND o.order_purchase_timestamp < '2018-01-01'
 GROUP BY oi.seller_id, lead_status
 ORDER BY total_revenue DESC;
 ```
