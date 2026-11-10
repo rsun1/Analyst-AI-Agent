@@ -187,22 +187,22 @@ Average answer quality: **2.76 / 3.00**
 
 The v1 eval was re-run on Postgres to check the migration. The first run scored lower (10/17), so the differences were investigated instead of accepted:
 
-- Two ground-truth entries were wrong. **Q007**'s expected answer (7.24M) was the `payment_value` total, while its own SQL summed `price` (6.16M). **Q010**'s expected count (3,729) came from a `BETWEEN ... '2017-07-31'` range that dropped most of July 31 when compared against timestamps. Both were fixed and checked against Postgres. For Q010 the expected answer now follows the natural reading of "delivered in July" (by delivery date: 3,455 vs 3,223 in June), and the commit message records why.
-- The same agent was then run **three times**, because a single LLM-judged run turned out to be too noisy to trust:
+- Two ground-truth entries were wrong. **Q007**'s expected answer (7.24M) was the `payment_value` total, while its own SQL summed `price` (6.16M). **Q010**'s expected count (3,729) came from a `BETWEEN ... '2017-07-31'` range that dropped most of July 31 when compared against timestamps. Both were fixed and checked against Postgres.
+- A single LLM-judged run turned out to be too noisy to trust, so the corrected dataset was run **three times** (`evals/eval_results_pg_clean_run{1,2,3}.json`):
 
-| Run | PASS (scored before the Q010 change) |
+| Run | PASS |
 |-----|------|
-| v1 (SQLite) | 12/17 = 70.6% |
-| v2 run 1 | 12/17 = 70.6% |
-| v2 run 2 | 11/17 = 64.7% |
+| v1 (SQLite, one run) | 12/17 = 70.6% |
+| v2 run 1 | 11/17 = 64.7% |
+| v2 run 2 | 13/17 = 76.5% |
 | v2 run 3 | 10/17 = 58.8% |
-
-These three runs were scored against the old Q010 answer, so they understate v2: the agent answered Q010 identically each time (3,455 vs 3,223), which matches the corrected ground truth. Counting Q010 as a pass gives about 64.7%–76.5% (mean about 70.6%). That figure is an estimate from the existing answers, not a fresh run.
+| **v2 mean** | **11.3/17 = 66.7%** |
 
 **Findings**
-- 13 of 17 questions gave the same result in all three runs and match v1, including every date-handling question that had to be ported, so the dialect change doesn't explain the variation.
-- Q007, Q008, Q011 and Q019 are unstable from run to run. In Q007's failing run the agent summed `payment_value` instead of `price`, despite the catalog rule, which is a real intermittent agent error.
-- Run-to-run spread is about 12 points, so a single eval run should not be read as an accuracy figure.
+- Run-to-run spread on the same code is about 18 points (58.8%–76.5%). The v1 figure is one run, so its own spread is unknown. The v2 mean is below v1's single number, but well inside the spread, so these runs give **no evidence of a regression** and are not enough to claim parity either.
+- 13 of 17 questions gave the same result in all three runs, and all 13 match v1, including every date-handling question that had to be ported. The dialect change does not explain the variation.
+- The instability comes from Q002, Q007, Q008 and Q011, which each flip in one run out of three.
+- Q010 is genuinely ambiguous ("delivered in July" can mean purchase month or delivery month). The agent picked delivery month in an earlier batch and purchase month in all three clean runs. In one clean run it also re-created the `BETWEEN` end-of-month bug on its own (3,729). The dataset's expected answer used delivery month (3,455 vs 3,223), so the question failed whenever the agent chose the other reading. **Q010 has since been re-typed as `ambiguity_handling`** (the agent must ask, or state its interpretation and give numbers that match it), and a catalog pitfall now steers date ranges on timestamps to half-open ranges. These three clean runs were scored before that change, so they are not directly comparable with a new run.
 
 ### What was fixed and why (v1)
 
@@ -222,9 +222,8 @@ These three runs were scored against the old Q010 answer, so they understate v2:
 
 | ID | Issue | Classification |
 |----|-------|---------------|
-| Q002 | Agent answer is factually correct but judge requires exact revenue figures, not prose | Judge false FAIL |
-| Q007 | Intermittently sums `payment_value` instead of `price` (about 1 run in 3) | Agent inconsistency |
+| Q002 | Fails in most runs because the judge wants exact revenue figures, not prose; passed once in three clean runs | Judge strictness / unstable |
+| Q007 | Intermittently sums `payment_value` instead of `price` despite the catalog rule | Agent inconsistency |
+| Q010 | "Delivered in July" is ambiguous. Now scored as `ambiguity_handling`. A spot check after adding the date-range pitfall (one sample) fixed the `BETWEEN` end-of-month bug, but the agent still mixed both readings in one query (grouped by purchase month, filtered by delivery date: 2,408 vs 3,114) without stating an interpretation | Ambiguity not surfaced (open) |
 | Q013 | Model still writes `won_date` filter despite pitfall + two examples | `gpt-4o-mini` model ceiling |
 | Q015 | SQL is now correct but insights only mention 2 of 7 channels | Insights presentation |
-
-Q010 was previously listed here as an ambiguous spec; it is resolved by the ground-truth change above.
