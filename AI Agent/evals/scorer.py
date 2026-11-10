@@ -210,7 +210,7 @@ REASONING: <one sentence>"""
 
 def run_eval(
     dataset_path: str = "evals/test_dataset.json",
-    output_path: str = "evals/eval_results.json",
+    output_path: str = "evals/eval_results_latest.json",
 ) -> None:
     dataset = load_test_dataset(dataset_path)
     total = len(dataset)
@@ -297,4 +297,6 @@ def run_eval(
 
 
 if __name__ == "__main__":
-    run_eval()
+    # Usage: python evals/scorer.py [output_path]
+    # The default output is NOT evals/eval_results.json, which holds the committed v1 baseline.
+    run_eval(output_path=sys.argv[1]) if len(sys.argv) > 1 else run_eval()
