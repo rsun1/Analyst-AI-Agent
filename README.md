@@ -1,23 +1,28 @@
 # Analytics AI Agent
 
-Python application that lets stakeholders ask natural-language questions about the **olist.sqlite** database (Olist Brazilian e-commerce). The agent retrieves relevant schema context via RAG, proposes SQL with an explanation, and after approval runs the query and returns results plus plain-English business insights.
+Python application that lets stakeholders ask natural-language questions about the **Olist** Brazilian e-commerce dataset, stored in **PostgreSQL**. The agent retrieves relevant schema context via RAG (pgvector), proposes SQL with an explanation, and after approval runs the query and returns results plus plain-English business insights.
+
+> **Versions.** `main` is **v2**: Postgres + pgvector. The original SQLite + JSON-vector-store implementation is preserved at the git tag `v1-constrained`.
 
 # Why This Exists
 Most enterprise analytics teams can't use vector databases, open-source models, or send raw data to external APIs. Security policies, compliance requirements, and IT governance make the standard RAG tutorial stack unavailable by default.
 
-This agent was built under those exact constraints. RAG implemented from scratch using cosine similarity on markdown files, no LangChain or FAISS, schema injected as structured YAML, all query execution local and read-only. Not because these are the best tools for the job in an ideal environment, but because they're what's actually available in most locked-down enterprise deployments.
+**v1** was built under those exact constraints. RAG implemented from scratch using cosine similarity on markdown files, no LangChain or FAISS, schema injected as structured YAML, all query execution local and read-only. Not because these are the best tools for the job in an ideal environment, but because they're what's actually available in most locked-down enterprise deployments.
 
 The goal wasn't to build the most capable Text-to-SQL system. It was to build one that works reliably inside real constraints, and to measure that reliability rigorously enough to know when it's failing and why.
 
 That second part turned out to be as hard as the first. The eval harness went through three iterations before the scoring was trustworthy. Factual accuracy moved from 27.8% to 70.6%, not by making the agent smarter, but by diagnosing specific failure modes: wrong column references, Portuguese category names, date filter logic, judge scoring tolerance. Each fix was grounded in evidence from the eval, not intuition.
 The remaining failures are documented too. A system you can't honestly evaluate is a system you can't trust.
 
+**v2** moves the same agent onto a production-shaped data layer: a real database server with a database-enforced read-only role, and vector search done inside Postgres with pgvector instead of in Python. The eval harness carried over unchanged, which is what made it possible to check the migration for regressions (see [Evaluation](#evaluation)).
+
 ---
 
 ## Requirements
 
 - **Python 3.10+**
-- **Dependencies:** `openai`, `python-dotenv`, `pyyaml`, `streamlit` (for the web UI). Install with:
+- **Docker** (runs Postgres + pgvector locally)
+- **Dependencies:** `openai`, `python-dotenv`, `pyyaml`, `streamlit`, `psycopg`, `pgvector` (and others). Install with:
   ```bash
   pip install -r requirements.txt
   ```
@@ -25,23 +30,32 @@ The remaining failures are documented too. A system you can't honestly evaluate 
   ```
   OPENAI_API_KEY=your_key
   ```
-- **olist.sqlite** in this folder (or set `OLIST_DB_PATH` in `.env`).
-  Download the database from Kaggle:
+- **`olist.sqlite`** in the `AI Agent/` folder. It is only the **source for the one-time migration** into Postgres; the agent never reads it at runtime.
+  Download it from Kaggle:
   [E-commerce Dataset by Olist as an SQLite Database](https://www.kaggle.com/datasets/terencicp/e-commerce-dataset-by-olist-as-an-sqlite-database)
-  Place the downloaded `olist.sqlite` file in the `AI Agent/` folder before running the agent.
 
 ---
 
-## Setup (one-time, and whenever schema files change)
+## Setup
 
-The agent uses embeddings for RAG. Run ingest once to build the vector store, and again any time you edit `olist_schema_queries.md` or `schema_catalog.yml`:
+Run these once (steps 3 again whenever `olist_schema_queries.md` or `schema_catalog.yml` change):
 
 ```bash
 cd "AI Agent"
+
+# 1. Start Postgres 16 + pgvector
+docker compose up -d
+
+# 2. Copy olist.sqlite into Postgres (drops and recreates tables; creates the read-only role)
+python -m migrate_to_postgres
+
+# 3. Chunk, embed and store the schema docs in the schema_chunks pgvector table
 python -m ingest
 ```
 
-This reads both source files, chunks them, calls the OpenAI Embeddings API, and saves everything to `embeddings_store.json` (34 chunks total: metric definitions + one chunk per table + cross-domain paths + pitfalls).
+**Migration details.** `INTEGER`→`BIGINT`, `REAL`→`DOUBLE PRECISION`, `TEXT`→`TEXT`. Columns whose names end in `_date`, `_timestamp` or `_at` become real `TIMESTAMP`s (empty strings become `NULL`). In v1 these were `TEXT` and needed `strftime`/`julianday`; in Postgres the agent uses `TO_CHAR`, `DATE_TRUNC` and `EXTRACT`.
+
+**Ingest details.** Reads both source files, chunks them, calls the OpenAI Embeddings API, and stores everything in `schema_chunks` (35 chunks: metric definitions + one chunk per table + cross-domain paths + pitfalls).
 
 ---
 
@@ -67,13 +81,13 @@ streamlit run app.py
 
 ## How it works (step by step)
 
-1. **RAG retrieval** — The user's question is embedded and compared via cosine similarity to all chunks in `embeddings_store.json`. The top-5 most relevant chunks (table descriptions, metric definitions, sample SQL) are retrieved as context.
+1. **RAG retrieval** — The user's question is embedded and the top-5 most similar chunks (table descriptions, metric definitions, sample SQL) are fetched from the `schema_chunks` table with a pgvector cosine-distance query (`ORDER BY embedding <=> ...`).
 
-2. **SQL generation** — The full schema catalog (`schema_catalog.yml`) is injected into the system prompt on every call as ground truth. The RAG context and few-shot worked examples are added to the user message. `gpt-4o-mini` generates a SQLite query and a short explanation.
+2. **SQL generation** — The full schema catalog (`schema_catalog.yml`) is injected into the system prompt on every call as ground truth. The RAG context and few-shot worked examples are added to the user message. `gpt-4o-mini` generates a PostgreSQL query and a short explanation.
 
 3. **Approve / edit** — The CLI shows the proposed SQL and explanation. You type `y` to approve, `n` to reject, or describe a change in plain English (edit loop, up to 5 attempts).
 
-4. **Execute** — The SQL runs against `olist.sqlite` in read-only mode. On an execution error (`OperationalError`), the agent auto-corrects and retries (up to 2 times).
+4. **Execute** — The SQL runs as the `olist_reader` role (`SELECT`-only) in a read-only session with a 15 s statement timeout and a row cap, so writes and DDL are rejected by the database itself. On a recoverable error (bad column, syntax, type mismatch), the agent auto-corrects and retries (up to 2 times). Permission errors are not retried.
 
 5. **Insights** — Results are sent back to the model, which returns a plain-English summary and 1–3 business recommendations grounded in the data.
 
@@ -83,17 +97,21 @@ streamlit run app.py
 
 | File | Purpose |
 |------|---------|
-| `ingest.py` | Chunks `olist_schema_queries.md` + `schema_catalog.yml`, generates embeddings, saves `embeddings_store.json` |
-| `rag.py` | Loads embeddings store, retrieves top-k chunks by cosine similarity |
+| `docker-compose.yml` | Runs `pgvector/pgvector:pg16` locally |
+| `migrate_to_postgres.py` | One-off copy of `olist.sqlite` into Postgres; converts date columns to `TIMESTAMP`; creates the read-only role |
+| `ingest.py` | Chunks `olist_schema_queries.md` + `schema_catalog.yml`, generates embeddings, stores them in the `schema_chunks` pgvector table |
+| `rag.py` | Embeds the question and retrieves top-k chunks by cosine distance inside Postgres |
+| `db.py` | Read-only Postgres connection, live schema introspection (`information_schema`), query execution |
 | `schema_catalog.yml` | Ground-truth schema: exact table/column names, types, FK relationships, cross-domain join paths, pitfalls |
 | `olist_schema_queries.md` | Named metric definitions with correct sample SQL (used for RAG) |
 | `sql_generator.py` | Builds SQL via OpenAI Chat; includes full schema + few-shot examples in system prompt |
 | `sql_correction.py` | On SQL execution error, asks the model for a corrected query and retries |
+| `sql_errors.py` | Classifies Postgres errors (missing column/table, syntax) into hints for the correction prompt |
 | `agent_core.py` | Pure-function wrappers for each step (RAG, generate, execute, explain); used by both CLI and Streamlit |
 | `agent.py` | CLI flow: question → propose → approve/edit → execute → explain |
 | `app.py` | Streamlit web UI |
 | `insights.py` | Generates plain-English summary + business insights from query results |
-| `schema_loader.py` | Loads `schema_catalog.yml`, validates against live DB via PRAGMA, renders schema block for prompts |
+| `schema_loader.py` | Loads `schema_catalog.yml`, validates it against the live DB schema, renders the schema block for prompts |
 | `evals/scorer.py` | Evaluation harness: runs all test questions through the agent, judges answers with LLM, saves results |
 | `evals/test_dataset.json` | 20-question test dataset with expected SQL, expected answers, and eval type |
 
@@ -104,19 +122,23 @@ streamlit run app.py
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OPENAI_API_KEY` | (required) | OpenAI API key |
-| `OLIST_DB_PATH` | `./olist.sqlite` | Path to SQLite database |
+| `PG_HOST` / `PG_PORT` / `PG_DB` | `localhost` / `5432` / `olist` | Postgres location |
+| `PG_ADMIN_USER` / `PG_ADMIN_PASSWORD` | `olist_admin` / `olist_admin_pw` | Owner role used by migration and ingest (**local-dev defaults, change for any shared deployment**) |
+| `PG_READER_USER` / `PG_READER_PASSWORD` | `olist_reader` / `olist_reader_pw` | SELECT-only role used by the agent (**local-dev defaults**) |
+| `PG_ADMIN_DSN` / `PG_READER_DSN` | built from the above | Full connection strings; override the individual settings |
+| `OLIST_DB_PATH` | `./olist.sqlite` | SQLite source file for the migration only |
 | `SCHEMA_DOC_PATH` | `./olist_schema_queries.md` | Metric definitions + sample queries |
 | `SCHEMA_CATALOG_PATH` | `./schema_catalog.yml` | Structured schema catalog |
-| `EMBEDDINGS_STORE_PATH` | `./embeddings_store.json` | Saved chunk embeddings |
 
 ---
 
 ## Architecture notes
 
-- **No LangChain, FAISS, or RAG frameworks** — embeddings and retrieval are implemented from scratch using `openai` and `json`.
+- **No LangChain, FAISS, or RAG frameworks** — embeddings come from `openai`, and similarity search runs in Postgres via the pgvector extension. (v1 did the cosine similarity in plain Python over a JSON file; the retrieval interface stayed the same.)
+- **Database-enforced read-only access** — instead of v1's read-only SQLite URI, the agent connects as a `SELECT`-only role in a read-only session. `DELETE`, `DROP` and `CREATE` are rejected with `InsufficientPrivilege`.
 - **Two-layer schema injection**: the full schema catalog is always in the system prompt (so the model can never hallucinate column names), while RAG provides query pattern examples as additional context in the user message.
 - **Few-shot examples** are baked into every SQL generation call in `sql_generator.py`, covering the most common failure patterns (category name translation, revenue calculation, delivery time vs delay, leads date filtering).
-- **Self-correction** handles SQLite `OperationalError` at execution time; empty-result detection in the eval harness triggers a second generation attempt with a hint.
+- **Self-correction** handles Postgres programming/data errors at execution time; empty-result detection in the eval harness triggers a second generation attempt with a hint.
 - **Models used**: `text-embedding-3-small` for embeddings, `gpt-4o-mini` for SQL generation, correction, and insights.
 
 ---
@@ -130,7 +152,7 @@ cd "AI Agent"
 python evals/scorer.py
 ```
 
-Results are saved to `evals/eval_results.json`. Each entry records the question, agent SQL, agent answer, expected answer, factual accuracy (PASS/FAIL/PARTIAL/DOCUMENTED), answer quality (1–3), and judge reasoning.
+Results are written to `evals/eval_results_latest.json` by default; pass a path to choose another (`python evals/scorer.py evals/my_run.json`). `evals/eval_results.json` is the committed v1 baseline and is never overwritten by default; the v2 runs are saved as `evals/eval_results_pg*.json`. Each entry records the question, agent SQL, agent answer, expected answer, factual accuracy (PASS/FAIL/PARTIAL/DOCUMENTED), answer quality (1–3), and judge reasoning.
 
 ### Test dataset
 
@@ -149,9 +171,9 @@ Results are saved to `evals/eval_results.json`. Each entry records the question,
 |------|---------|
 | `answer_verification` | LLM judge checks factual accuracy against an expected answer (within 1% tolerance for numeric questions) |
 | `ambiguity_handling` | Agent should either ask a clarifying question or state its interpretation explicitly before proceeding |
-| `known_failure` | Documented limitation — excluded from scoring (e.g. queries that exceed the 60s pipeline timeout on SQLite) |
+| `known_failure` | Documented limitation — excluded from scoring (e.g. queries that exceed the 60s pipeline timeout) |
 
-### Score progression
+### Score progression (v1, SQLite)
 
 | Iteration | Change | PASS rate |
 |-----------|--------|-----------|
@@ -161,7 +183,28 @@ Results are saved to `evals/eval_results.json`. Each entry records the question,
 
 Average answer quality: **2.76 / 3.00**
 
-### What was fixed and why
+### v2 (Postgres) regression check
+
+The v1 eval was re-run on Postgres to check the migration. The first run scored lower (10/17), so the differences were investigated instead of accepted:
+
+- Two ground-truth entries were wrong. **Q007**'s expected answer (7.24M) was the `payment_value` total, while its own SQL summed `price` (6.16M). **Q010**'s expected count (3,729) came from a `BETWEEN ... '2017-07-31'` range that dropped most of July 31 when compared against timestamps. Both were fixed and checked against Postgres. For Q010 the expected answer now follows the natural reading of "delivered in July" (by delivery date: 3,455 vs 3,223 in June), and the commit message records why.
+- The same agent was then run **three times**, because a single LLM-judged run turned out to be too noisy to trust:
+
+| Run | PASS (scored before the Q010 change) |
+|-----|------|
+| v1 (SQLite) | 12/17 = 70.6% |
+| v2 run 1 | 12/17 = 70.6% |
+| v2 run 2 | 11/17 = 64.7% |
+| v2 run 3 | 10/17 = 58.8% |
+
+These three runs were scored against the old Q010 answer, so they understate v2: the agent answered Q010 identically each time (3,455 vs 3,223), which matches the corrected ground truth. Counting Q010 as a pass gives about 64.7%–76.5% (mean about 70.6%). That figure is an estimate from the existing answers, not a fresh run.
+
+**Findings**
+- 13 of 17 questions gave the same result in all three runs and match v1, including every date-handling question that had to be ported, so the dialect change doesn't explain the variation.
+- Q007, Q008, Q011 and Q019 are unstable from run to run. In Q007's failing run the agent summed `payment_value` instead of `price`, despite the catalog rule, which is a real intermittent agent error.
+- Run-to-run spread is about 12 points, so a single eval run should not be read as an accuracy figure.
+
+### What was fixed and why (v1)
 
 | Problem | Root cause | Fix |
 |---------|-----------|-----|
@@ -175,11 +218,13 @@ Average answer quality: **2.76 / 3.00**
 | Q017 blocked the entire eval run | 15s timeout too short for full pipeline; complex nested subquery exceeded it | Raised timeout to 60s; marked Q017 and Q003 as `known_failure` |
 | Judge gave false FAILs (Q001, Q008, Q009) | Judge didn't enforce numeric tolerance; no reasoning to diagnose | Added explicit 1% tolerance instruction and `REASONING` field to judge prompt |
 
-### Remaining failures (as of final run)
+### Remaining failures
 
 | ID | Issue | Classification |
 |----|-------|---------------|
 | Q002 | Agent answer is factually correct but judge requires exact revenue figures, not prose | Judge false FAIL |
-| Q010 | Question is ambiguous — "delivered in July" could mean purchase date or delivery date | Ambiguous spec |
+| Q007 | Intermittently sums `payment_value` instead of `price` (about 1 run in 3) | Agent inconsistency |
 | Q013 | Model still writes `won_date` filter despite pitfall + two examples | `gpt-4o-mini` model ceiling |
 | Q015 | SQL is now correct but insights only mention 2 of 7 channels | Insights presentation |
+
+Q010 was previously listed here as an ambiguous spec; it is resolved by the ground-truth change above.
