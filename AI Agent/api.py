@@ -7,6 +7,9 @@ SQL; the server holds no session. Human-in-the-loop flow:
     POST /ask      question (+ history)            -> proposed SQL + explanation
     POST /revise   sql + plain-English instruction -> revised SQL (repeat as needed)
     POST /execute  approved SQL                    -> rows + plain-English insights
+    POST /scope    question                        -> is it broad (multi-query)?
+    POST /analyze  broad question (+ history)      -> sub-analyses + synthesised report
+    GET  /schema/status                            -> live table count + catalog drift
     POST /feedback thumbs up/down on a result      -> logged for later evaluation
     GET  /health   liveness + database check (no auth)
 
@@ -42,6 +45,8 @@ import agent_core
 from config import API_KEY, API_MAX_RESPONSE_ROWS, CORS_ORIGINS
 from db import get_connection
 from logger import log_feedback_event, log_query_event
+from multi_query import is_broad_question, run_multi_query_analysis
+from schema_loader import validate_catalog_against_db
 from sql_generator import UNCLEAR_INSTRUCTION
 
 log = logging.getLogger("analytics_agent.api")
@@ -150,6 +155,8 @@ class ReviseRequest(BaseModel):
     explanation: str = Field(default="", max_length=4000)
     instruction: str = Field(min_length=1, max_length=1000,
                              description="Plain-English change, e.g. 'group by week instead of month'.")
+    last_db_error: str | None = Field(default=None, max_length=4000,
+                                      description="Database error from the previous run, if any.")
 
 
 class ReviseResponse(BaseModel):
@@ -181,6 +188,39 @@ class ExecuteResponse(BaseModel):
     db_errors: list[str] = Field(description="Errors hit (and auto-corrected) before success.")
     insights: str | None = None
     insights_error: str | None = None
+
+
+class ScopeRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+
+
+class ScopeResponse(BaseModel):
+    broad: bool = Field(description="True if the question needs several sub-analyses.")
+
+
+class AnalyzeRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    history: list[HistoryTurn] = Field(default_factory=list, max_length=12)
+
+
+class SubResult(BaseModel):
+    sub_question: str
+    sql: str
+    columns: list[str]
+    rows: list[list]
+    summary: str
+    error: str | None = None
+
+
+class AnalyzeResponse(BaseModel):
+    sub_results: list[SubResult]
+    report_markdown: str
+    failed_count: int
+
+
+class SchemaStatus(BaseModel):
+    live_tables: int
+    drift_warnings: list[str]
 
 
 class FeedbackRequest(BaseModel):
@@ -224,6 +264,7 @@ def revise(req: ReviseRequest):
         current_sql=req.sql,
         current_explanation=req.explanation,
         revision_instruction=req.instruction,
+        last_db_error=req.last_db_error,
     )
     if sql == UNCLEAR_INSTRUCTION:
         return ReviseResponse(unclear=True, sql=req.sql, explanation=req.explanation)
@@ -273,6 +314,49 @@ def execute(req: ExecuteRequest):
         insights=insights,
         insights_error=insights_error,
     )
+
+
+@app.post("/scope", response_model=ScopeResponse, tags=["agent"], dependencies=[Depends(require_api_key)])
+def scope(req: ScopeRequest):
+    """Classify a question as single-query or broad (needs a multi-part analysis)."""
+    return ScopeResponse(broad=is_broad_question(req.question))
+
+
+@app.post("/analyze", response_model=AnalyzeResponse, tags=["agent"], dependencies=[Depends(require_api_key)])
+def analyze(req: AnalyzeRequest):
+    """
+    Multi-query analysis for a broad question: decompose, run each sub-query, synthesise.
+    Unlike /ask this executes SQL without a human approval step (every sub-query still runs
+    through the read-only role). It makes many model calls, so it is slow (tens of seconds).
+    """
+    history = [t.model_dump(exclude_none=True) for t in req.history]
+    try:
+        report = run_multi_query_analysis(req.question, history or None)
+    except Exception as e:
+        raise HTTPException(502, f"Analysis failed: {e}")
+    return AnalyzeResponse(
+        sub_results=[
+            SubResult(
+                sub_question=r.sub_question, sql=r.sql, columns=r.columns,
+                rows=jsonable_encoder([list(row) for row in r.rows[:200]]),
+                summary=r.summary, error=r.error,
+            )
+            for r in report.sub_results
+        ],
+        report_markdown=report.report_markdown,
+        failed_count=report.failed_count,
+    )
+
+
+@app.get("/schema/status", response_model=SchemaStatus, tags=["ops"], dependencies=[Depends(require_api_key)])
+def schema_status():
+    """Live table count and any drift between the schema catalog and the database."""
+    try:
+        block = agent_core.step_introspect_schema()
+        drift = validate_catalog_against_db() or []
+    except Exception as e:
+        raise HTTPException(503, f"Could not read the schema: {e}")
+    return SchemaStatus(live_tables=block.count(chr(10) + "TABLE: "), drift_warnings=list(drift))
 
 
 @app.post("/feedback", status_code=204, tags=["agent"], dependencies=[Depends(require_api_key)])

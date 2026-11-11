@@ -125,6 +125,51 @@ def test_revise_ok(monkeypatch):
     assert r.json() == {"unclear": False, "sql": "SELECT 2", "explanation": "weekly"}
 
 
+# -- /scope, /analyze, /schema/status, revise passthrough (mocked) ------------
+
+def test_scope(monkeypatch):
+    monkeypatch.setattr(api, "is_broad_question", lambda q: q.startswith("Analyze"))
+    assert client.post("/scope", json={"question": "Analyze sellers"}, headers=H).json() == {"broad": True}
+    assert client.post("/scope", json={"question": "GMV 2018"}, headers=H).json() == {"broad": False}
+
+
+def test_analyze_serialises_report(monkeypatch):
+    from multi_query import MultiQueryReport, SubQueryResult
+    sub = SubQueryResult("sq", "SELECT 1", ["a"], [(decimal.Decimal("2.5"),)], "sum", None)
+    monkeypatch.setattr(api, "run_multi_query_analysis",
+                        lambda q, h=None: MultiQueryReport(q, [sub], "# Report", 0))
+    body = client.post("/analyze", json={"question": "Analyze sellers"}, headers=H).json()
+    assert body["report_markdown"] == "# Report" and body["failed_count"] == 0
+    assert body["sub_results"][0]["rows"] == [[2.5]]
+
+
+def test_analyze_failure_is_502(monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("model down")
+    monkeypatch.setattr(api, "run_multi_query_analysis", boom)
+    assert client.post("/analyze", json={"question": "q"}, headers=H).status_code == 502
+
+
+def test_schema_status(monkeypatch):
+    monkeypatch.setattr(api.agent_core, "step_introspect_schema", lambda: "\nTABLE: a\nTABLE: b")
+    monkeypatch.setattr(api, "validate_catalog_against_db", lambda: ["drift"])
+    assert client.get("/schema/status", headers=H).json() == {"live_tables": 2, "drift_warnings": ["drift"]}
+    assert client.get("/schema/status").status_code == 401
+
+
+def test_revise_passes_last_db_error(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(api.agent_core, "step_rag", lambda q: [])
+
+    def rev(**kw):
+        seen.update(kw)
+        return "SELECT 2", "x"
+    monkeypatch.setattr(api.agent_core, "step_revise", rev)
+    client.post("/revise", json={"question": "q", "sql": "SELECT 1", "instruction": "i",
+                                  "last_db_error": "boom"}, headers=H)
+    assert seen["last_db_error"] == "boom"
+
+
 # -- /execute (mocked) --------------------------------------------------------
 
 def test_execute_serialises_rows_truncates_and_explains(monkeypatch):

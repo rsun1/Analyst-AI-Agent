@@ -71,3 +71,6 @@ API_KEY = os.getenv("API_KEY")
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 # Rows returned to the client per query; the full count is still reported.
 API_MAX_RESPONSE_ROWS = int(os.getenv("API_MAX_RESPONSE_ROWS", "1000"))
+
+# Streamlit front end -> API (api_client.py). The UI talks to the API over HTTP only.
+API_URL = os.getenv("API_URL", "http://localhost:8000").rstrip("/")
