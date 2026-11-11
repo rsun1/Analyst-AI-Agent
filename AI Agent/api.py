@@ -27,6 +27,7 @@ pool so one slow request does not stall the others.
 
 Run:  uvicorn api:app --reload        (docs at /docs, schema at /openapi.json)
 """
+import contextlib
 import json
 import logging
 import re
@@ -43,7 +44,7 @@ from pydantic import BaseModel, Field
 
 import agent_core
 from config import API_KEY, API_MAX_RESPONSE_ROWS, CORS_ORIGINS
-from db import get_connection
+from db import close_pool, get_connection
 from logger import log_feedback_event, log_query_event
 from multi_query import is_broad_question, run_multi_query_analysis
 from schema_loader import validate_catalog_against_db
@@ -57,7 +58,14 @@ if not log.handlers:  # uvicorn only configures its own loggers; emit our access
     log.setLevel(logging.INFO)
     log.propagate = False
 
+@contextlib.asynccontextmanager
+async def lifespan(_app: FastAPI):
+    yield
+    close_pool()  # release pooled database connections on shutdown
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Analytics AI Agent API",
     version="2.0.0",
     description="Natural-language questions about the Olist database: propose SQL, "

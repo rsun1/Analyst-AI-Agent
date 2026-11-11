@@ -164,6 +164,7 @@ python -m pytest tests -q
 | `PG_READER_USER` / `PG_READER_PASSWORD` | `olist_reader` / `olist_reader_pw` | SELECT-only role used by the agent (**local-dev defaults**) |
 | `PG_ADMIN_DSN` / `PG_READER_DSN` | built from the above | Full connection strings; override the individual settings |
 | `API_KEY` | (none) | Key required in the `X-API-Key` header; unset means the API refuses requests (503) |
+| `DB_POOL_MIN` / `DB_POOL_MAX` | `1` / `10` | Size of the API's database connection pool (per process) |
 | `API_URL` | `http://localhost:8000` | Where the Streamlit UI finds the API |
 | `CORS_ORIGINS` | (empty) | Comma-separated browser origins allowed to call the API; empty means none |
 | `API_MAX_RESPONSE_ROWS` | `1000` | Rows returned per `/execute`; the full count is still reported |

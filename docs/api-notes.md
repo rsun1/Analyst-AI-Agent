@@ -47,7 +47,7 @@ Not implemented. `/execute` waits for the query and the OpenAI summary and retur
 
 ## Known gaps
 
-- **Connections.** `db.py` opens a connection per query. Fine locally; a hosted API needs a connection pool and attention to the managed database's connection limit.
+- **Connections (pooled, limits not yet tuned).** `db.py` keeps a shared `psycopg_pool` pool (`DB_POOL_MIN`/`DB_POOL_MAX`, default 1-10) created on first use and closed on shutdown. Each pooled connection carries the read-only and timeout settings, dead connections are dropped on checkout, and a failed query does not poison the pool (tests cover these). The pool is per process: total connections = `DB_POOL_MAX` x number of API processes/containers, which must stay under the managed database's connection limit. I have not load-tested the sizes.
 - **Rate limiting and per-user keys.** There is one shared key and no rate limit. Anyone with the key can spend OpenAI budget. Needed before a public URL.
 - **Logs.** `query_log.jsonl` and `feedback_log.jsonl` are local files. In a container they disappear on restart; they should move to the database or a log service in the deployment phase.
 - **The `/execute` validator is intentionally simple.** It rejects a `;` inside a string literal, and it would not catch every unsafe construct. It is a first guard only; the database role is the real boundary, and a test shows a write that passes the validator being refused by the database.

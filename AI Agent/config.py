@@ -36,6 +36,11 @@ PG_READER_DSN = os.getenv("PG_READER_DSN") or (
     f"postgresql://{PG_READER_USER}:{PG_READER_PASSWORD}@{PG_HOST}:{PG_PORT}/{PG_DB}"
 )
 
+# Connection pool for the reader role (db.py). Keep max_size x (API processes) below the
+# database's connection limit.
+DB_POOL_MIN = int(os.getenv("DB_POOL_MIN", "1"))
+DB_POOL_MAX = int(os.getenv("DB_POOL_MAX", "10"))
+
 # Schema & RAG
 SCHEMA_DOC_PATH = os.getenv("SCHEMA_DOC_PATH") or str(BASE_DIR / "olist_schema_queries.md")
 EMBEDDINGS_STORE_PATH = os.getenv("EMBEDDINGS_STORE_PATH") or str(BASE_DIR / "embeddings_store.json")
