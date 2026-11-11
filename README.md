@@ -77,6 +77,35 @@ cd "AI Agent"
 streamlit run app.py
 ```
 
+The UI still calls the agent code directly. Moving it onto the HTTP API below is the next step.
+
+### HTTP API
+
+```bash
+cd "AI Agent"
+export API_KEY=choose-a-long-random-string     # PowerShell: $env:API_KEY = "..."
+uvicorn api:app --reload                       # interactive docs at http://localhost:8000/docs
+```
+
+Stateless human-in-the-loop flow; the client carries the conversation and the current SQL. Every endpoint except `/health` needs an `X-API-Key` header, and if `API_KEY` is not set they return 503 instead of running open.
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /ask` | question (+ optional history) → proposed SQL + explanation. Nothing is executed. |
+| `POST /revise` | current SQL + plain-English instruction → revised SQL (or `unclear: true`) |
+| `POST /execute` | approved SQL → rows, auto-correction errors, plain-English insights |
+| `POST /feedback` | thumbs up/down on a result, logged to `feedback_log.jsonl` |
+| `GET /health` | liveness plus a database round-trip (no key) |
+
+`/execute` runs SQL sent by the client, so it has two guards: a cheap check that only a single `SELECT`/`WITH` statement is allowed, and, the one that actually matters, the database's own read-only role and session. A data-modifying CTE passes the first check and is stopped by the second (the API returns 403). Retrieval context is recomputed on the server and never accepted from the client. Design notes: [`docs/api-notes.md`](docs/api-notes.md).
+
+Tests (agent steps mocked; the database tests use the local Postgres and are skipped if it is down):
+
+```bash
+cd "AI Agent"
+python -m pytest tests -q
+```
+
 ---
 
 ## How it works (step by step)
@@ -109,6 +138,7 @@ streamlit run app.py
 | `sql_errors.py` | Classifies Postgres errors (missing column/table, syntax) into hints for the correction prompt |
 | `agent_core.py` | Pure-function wrappers for each step (RAG, generate, execute, explain); used by both CLI and Streamlit |
 | `agent.py` | CLI flow: question → propose → approve/edit → execute → explain |
+| `api.py` | FastAPI service: `/ask`, `/revise`, `/execute`, `/feedback`, `/health` |
 | `app.py` | Streamlit web UI |
 | `insights.py` | Generates plain-English summary + business insights from query results |
 | `schema_loader.py` | Loads `schema_catalog.yml`, validates it against the live DB schema, renders the schema block for prompts |
@@ -126,6 +156,9 @@ streamlit run app.py
 | `PG_ADMIN_USER` / `PG_ADMIN_PASSWORD` | `olist_admin` / `olist_admin_pw` | Owner role used by migration and ingest (**local-dev defaults, change for any shared deployment**) |
 | `PG_READER_USER` / `PG_READER_PASSWORD` | `olist_reader` / `olist_reader_pw` | SELECT-only role used by the agent (**local-dev defaults**) |
 | `PG_ADMIN_DSN` / `PG_READER_DSN` | built from the above | Full connection strings; override the individual settings |
+| `API_KEY` | (none) | Key required in the `X-API-Key` header; unset means the API refuses requests (503) |
+| `CORS_ORIGINS` | (empty) | Comma-separated browser origins allowed to call the API; empty means none |
+| `API_MAX_RESPONSE_ROWS` | `1000` | Rows returned per `/execute`; the full count is still reported |
 | `OLIST_DB_PATH` | `./olist.sqlite` | SQLite source file for the migration only |
 | `SCHEMA_DOC_PATH` | `./olist_schema_queries.md` | Metric definitions + sample queries |
 | `SCHEMA_CATALOG_PATH` | `./schema_catalog.yml` | Structured schema catalog |
