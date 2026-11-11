@@ -56,7 +56,7 @@ A document database. Records are JSON-like documents, and the schema can differ 
 
 - **Good for:** nested or variable-shape data, event and log streams, content that changes shape often.
 - **Poor fit for this project's core data.** The Olist data is 11 tables linked by foreign keys, and the agent's value comes from joins across them (orders → items → sellers → leads). Text-to-SQL also leans on a fixed, introspectable schema. In Mongo, the same questions would become aggregation pipelines, and the schema catalog approach would have to be rebuilt.
-- **Where it could fit:** semi-structured event data. This project's `query_log.jsonl` (each query, its SQL, any errors, any human corrections) is a natural document collection. Postgres `JSONB` could hold it just as well, so the choice there would be about operational preference, not capability.
+- **Where it could fit:** semi-structured event data. This project's query log (each query, its SQL, any errors, any human corrections) is a natural document collection. I stored it in Postgres instead (`app_logs.query_events`, with the variable-shape parts in `JSONB` columns): one fewer system to run, and it can be joined or queried with the same tools. The choice was operational preference, not capability.
 
 ## Vector databases
 

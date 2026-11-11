@@ -48,6 +48,7 @@ docker compose up -d
 
 # 2. Copy olist.sqlite into Postgres (drops and recreates tables; creates the read-only role)
 python -m migrate_to_postgres
+python -m setup_logging_db --import-jsonl   # log tables + INSERT-only role; imports the sample query_log.jsonl
 
 # 3. Chunk, embed and store the schema docs in the schema_chunks pgvector table
 python -m ingest
@@ -100,7 +101,7 @@ Stateless human-in-the-loop flow; the client carries the conversation and the cu
 | `POST /scope` | is this question broad enough to need a multi-part analysis? |
 | `POST /analyze` | broad question → sub-analyses and a synthesised report (slow; runs its sub-queries without a per-query approval step) |
 | `GET /schema/status` | live table count and any drift between the schema catalog and the database |
-| `POST /feedback` | thumbs up/down on a result, logged to `feedback_log.jsonl` |
+| `POST /feedback` | thumbs up/down on a result, stored in Postgres (`app_logs.feedback_events`) |
 | `GET /health` | liveness plus a database round-trip (no key) |
 
 `/execute` runs SQL sent by the client, so it has two guards: a cheap check that only a single `SELECT`/`WITH` statement is allowed, and, the one that actually matters, the database's own read-only role and session. A data-modifying CTE passes the first check and is stopped by the second (the API returns 403). Retrieval context is recomputed on the server and never accepted from the client. Design notes: [`docs/api-notes.md`](docs/api-notes.md).
@@ -133,6 +134,8 @@ python -m pytest tests -q
 | File | Purpose |
 |------|---------|
 | `docker-compose.yml` | Runs `pgvector/pgvector:pg16` locally |
+| `setup_logging_db.py` | Creates the `app_logs` schema (query and feedback event tables) and the INSERT-only `olist_logger` role; never drops anything |
+| `logger.py` | Writes query and feedback events to Postgres; falls back to a JSON line on stdout if the write fails |
 | `migrate_to_postgres.py` | One-off copy of `olist.sqlite` into Postgres; converts date columns to `TIMESTAMP`; creates the read-only role |
 | `ingest.py` | Chunks `olist_schema_queries.md` + `schema_catalog.yml`, generates embeddings, stores them in the `schema_chunks` pgvector table |
 | `rag.py` | Embeds the question and retrieves top-k chunks by cosine distance inside Postgres |
@@ -161,6 +164,7 @@ python -m pytest tests -q
 | `OPENAI_API_KEY` | (required) | OpenAI API key |
 | `PG_HOST` / `PG_PORT` / `PG_DB` | `localhost` / `5432` / `olist` | Postgres location |
 | `PG_ADMIN_USER` / `PG_ADMIN_PASSWORD` | `olist_admin` / `olist_admin_pw` | Owner role used by migration and ingest (**local-dev defaults, change for any shared deployment**) |
+| `PG_LOGGER_USER` / `PG_LOGGER_PASSWORD` | `olist_logger` / `olist_logger_pw` | INSERT-only role the API uses to write log events (**local-dev defaults**) |
 | `PG_READER_USER` / `PG_READER_PASSWORD` | `olist_reader` / `olist_reader_pw` | SELECT-only role used by the agent (**local-dev defaults**) |
 | `PG_ADMIN_DSN` / `PG_READER_DSN` | built from the above | Full connection strings; override the individual settings |
 | `API_KEY` | (none) | Key required in the `X-API-Key` header; unset means the API refuses requests (503) |
