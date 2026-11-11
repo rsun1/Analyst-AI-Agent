@@ -62,3 +62,12 @@ MULTI_QUERY_DOMAIN_CONTEXT = (
 )
 MAX_SUB_QUESTIONS = 5
 MIN_SUB_QUESTIONS = 2
+
+# HTTP API (api.py)
+# API_KEY: required for every endpoint except /health. If unset, protected endpoints
+# return 503 (fail closed) instead of running unauthenticated.
+API_KEY = os.getenv("API_KEY")
+# Comma-separated list of browser origins allowed by CORS (empty = none).
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+# Rows returned to the client per query; the full count is still reported.
+API_MAX_RESPONSE_ROWS = int(os.getenv("API_MAX_RESPONSE_ROWS", "1000"))

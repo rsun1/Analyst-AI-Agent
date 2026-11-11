@@ -45,3 +45,22 @@ def log_query_event(
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception:
         pass  # logging must never surface errors to the user
+
+
+_FEEDBACK_LOG_PATH = BASE_DIR / "feedback_log.jsonl"
+
+
+def log_feedback_event(question: str, sql: str, rating: str, comment: str | None) -> None:
+    """Append one thumbs-up/down record to feedback_log.jsonl. Silent — never raises."""
+    try:
+        record = {
+            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+            "question": question,
+            "sql": sql,
+            "rating": rating,
+            "comment": comment,
+        }
+        with open(_FEEDBACK_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + chr(10))
+    except Exception:
+        pass
