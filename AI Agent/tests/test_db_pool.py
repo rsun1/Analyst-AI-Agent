@@ -23,7 +23,7 @@ def test_connections_are_reused():
         with db.get_connection() as c:
             pids.add(c.execute("SELECT pg_backend_pid()").fetchone()[0])
     # 20 sequential borrows must not open 20 backend connections.
-    assert len(pids) <= db._get_pool().get_stats()["pool_size"] < 20
+    assert len(pids) <= db._get_pool('reader').get_stats()["pool_size"] < 20
 
 
 def test_pooled_connection_is_still_read_only():

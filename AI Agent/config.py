@@ -36,6 +36,13 @@ PG_READER_DSN = os.getenv("PG_READER_DSN") or (
     f"postgresql://{PG_READER_USER}:{PG_READER_PASSWORD}@{PG_HOST}:{PG_PORT}/{PG_DB}"
 )
 
+# Logger role: INSERT-only on the app_logs schema (query and feedback events).
+PG_LOGGER_USER = os.getenv("PG_LOGGER_USER", "olist_logger")
+PG_LOGGER_PASSWORD = os.getenv("PG_LOGGER_PASSWORD", "olist_logger_pw")
+PG_LOGGER_DSN = os.getenv("PG_LOGGER_DSN") or (
+    f"postgresql://{PG_LOGGER_USER}:{PG_LOGGER_PASSWORD}@{PG_HOST}:{PG_PORT}/{PG_DB}"
+)
+
 # Connection pool for the reader role (db.py). Keep max_size x (API processes) below the
 # database's connection limit.
 DB_POOL_MIN = int(os.getenv("DB_POOL_MIN", "1"))

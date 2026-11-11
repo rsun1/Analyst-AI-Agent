@@ -10,7 +10,7 @@ import threading
 import psycopg
 from psycopg_pool import ConnectionPool
 
-from config import DB_POOL_MAX, DB_POOL_MIN, PG_READER_DSN
+from config import DB_POOL_MAX, DB_POOL_MIN, PG_LOGGER_DSN, PG_READER_DSN
 
 STATEMENT_TIMEOUT_MS = 15_000
 MAX_ROWS = 50_000
@@ -23,32 +23,40 @@ _CONN_OPTIONS = (
     f"-c statement_timeout={STATEMENT_TIMEOUT_MS} "
     "-c default_transaction_read_only=on"
 )
-_pool: ConnectionPool | None = None
+_pools: dict[str, ConnectionPool] = {}
 _pool_lock = threading.Lock()
 
 
-def _get_pool() -> ConnectionPool:
-    """Create the shared pool on first use (not at import, so importing never needs a database)."""
-    global _pool
+def _get_pool(name: str = "reader") -> ConnectionPool:
+    """Create a shared pool on first use (not at import, so importing never needs a database)."""
     with _pool_lock:
-        if _pool is None:
-            _pool = ConnectionPool(
-                PG_READER_DSN,
-                min_size=DB_POOL_MIN,
-                max_size=DB_POOL_MAX,
-                kwargs={"options": _CONN_OPTIONS},
-                check=ConnectionPool.check_connection,  # drop dead connections (e.g. after a DB restart)
-                open=True,
-            )
-        return _pool
+        if name not in _pools:
+            if name == "reader":
+                _pools[name] = ConnectionPool(
+                    PG_READER_DSN,
+                    min_size=DB_POOL_MIN,
+                    max_size=DB_POOL_MAX,
+                    kwargs={"options": _CONN_OPTIONS},
+                    check=ConnectionPool.check_connection,  # drop dead connections (e.g. after a DB restart)
+                    open=True,
+                )
+            else:  # "logger": small pool, INSERT-only role, short timeout, not read-only
+                _pools[name] = ConnectionPool(
+                    PG_LOGGER_DSN,
+                    min_size=0,
+                    max_size=2,
+                    kwargs={"options": "-c statement_timeout=5000"},
+                    check=ConnectionPool.check_connection,
+                    open=True,
+                )
+        return _pools[name]
 
 
 def close_pool() -> None:
-    global _pool
     with _pool_lock:
-        if _pool is not None:
-            _pool.close()
-            _pool = None
+        for p in _pools.values():
+            p.close()
+        _pools.clear()
 
 
 def get_connection(dsn: str | None = None):
@@ -59,7 +67,12 @@ def get_connection(dsn: str | None = None):
     """
     if dsn:
         return psycopg.connect(dsn, options=_CONN_OPTIONS)
-    return _get_pool().connection()
+    return _get_pool("reader").connection()
+
+
+def get_log_connection():
+    """Pooled connection for writing log events (INSERT-only role)."""
+    return _get_pool("logger").connection()
 
 
 def get_live_schema(dsn: str | None = None) -> dict[str, list[dict]]:

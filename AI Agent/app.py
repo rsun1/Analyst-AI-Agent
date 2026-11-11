@@ -7,7 +7,7 @@ Features:
   - Auto chart generation after each query result
   - Multi-query analysis for broad business questions
   - Append-only message log that survives Streamlit reruns
-  - Silent query_log.jsonl logging (fine-tuning data flywheel)
+  - Query/correction logging happens in the API (Postgres app_logs schema)
 """
 import streamlit as st
 
