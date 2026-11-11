@@ -35,6 +35,16 @@ So CORS only matters once a browser front end (for example a React page) calls t
 
 Not implemented. `/execute` waits for the query and the OpenAI summary and returns once. The slow part is the model call, so a chat UI could feel faster if the summary were streamed (server-sent events or a chunked response) while the table is shown immediately. A cheap step in that direction is already available: `include_insights: false` returns the rows without waiting for the summary, and the client could then ask for the summary separately. Streaming would be worth building only after the front end exists and the latency is measured.
 
+## Moving the Streamlit UI onto the API
+
+`app.py` no longer imports the agent code; `api_client.py` makes the HTTP calls. What changed, and what it cost:
+
+- **`/execute` now also explains.** Query, log entry and insights come back in one call, so the old separate "explaining" UI state is gone. The UI waits slightly longer for the first result than before; `include_insights: false` is available if that matters.
+- **Multi-query analysis is one blocking call (`/analyze`).** The in-process version updated a progress message after each sub-query; over a single HTTP request that live progress is lost (about a minute of spinner). Streaming progress events would fix it and is not built.
+- **`/analyze` skips the approval step.** Each sub-query runs without a human reviewing its SQL, exactly as before. It is still bound by the read-only role, but it is the one path where generated SQL is not human-approved.
+- **Row limits.** The browser now receives at most `API_MAX_RESPONSE_ROWS` rows (default 1000); the UI says so when a result is truncated.
+- **Auth.** The UI holds the API key server-side (it is a Python process, not browser code), so the key never reaches the user's browser. A React front end would need a different design: a browser cannot keep a shared key secret.
+
 ## Known gaps
 
 - **Connections.** `db.py` opens a connection per query. Fine locally; a hosted API needs a connection pool and attention to the managed database's connection limit.

@@ -11,12 +11,9 @@ Features:
 """
 import streamlit as st
 
-from agent_core import UNCLEAR_INSTRUCTION, step_explain, step_execute, step_generate, step_introspect_schema, step_rag
+import api_client
 from chart import detect_chart
 from conversation import append_assistant_turn, append_user_turn
-from logger import log_query_event
-from multi_query import is_broad_question, run_multi_query_analysis
-from schema_loader import validate_catalog_against_db
 
 # ── Page config ────────────────────────────────────────────────────────────────
 
@@ -169,7 +166,6 @@ def _init_state() -> None:
     st.session_state.setdefault("flow", {
         "state": "IDLE",
         "question": "",
-        "rag_context": [],
         "sql": "",
         "explanation": "",
         "proposed_sql": "",      # original before any edits
@@ -183,18 +179,15 @@ def _init_state() -> None:
 
 _init_state()
 
-# Introspect live DB schema once per session (result is module-level cached, so only one DB round-trip).
+# Ask the API for the live schema and any catalog drift, once per session.
 if st.session_state["_live_schema_tables"] is None:
     try:
-        schema_block = step_introspect_schema()
-        st.session_state["_live_schema_tables"] = schema_block.count("\nTABLE: ")
-    except Exception:
+        status = api_client.schema_status()
+        st.session_state["_live_schema_tables"] = status["live_tables"]
+        st.session_state["_schema_warnings"] = status["drift_warnings"]
+    except api_client.ApiError:
         st.session_state["_live_schema_tables"] = 0
-
-# Run schema drift check once per session
-if st.session_state["_schema_warnings"] is None:
-    drift = validate_catalog_against_db()
-    st.session_state["_schema_warnings"] = drift or []
+        st.session_state["_schema_warnings"] = []
 
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
@@ -238,7 +231,6 @@ with st.sidebar:
         st.session_state["flow"] = {
             "state": "IDLE",
             "question": "",
-            "rag_context": [],
             "sql": "",
             "explanation": "",
             "proposed_sql": "",
@@ -462,17 +454,21 @@ if _flow()["state"] == "AWAITING_REVISION_INSTRUCTION":
 if _flow()["state"] == "REVISING":
     flow = _flow()
     with st.spinner("Revising SQL..."):
-        from agent_core import step_revise
-        new_sql, new_explanation = step_revise(
-            original_question=flow["question"],
-            rag_context=flow["rag_context"],
-            current_sql=flow["sql"],
-            current_explanation=flow["explanation"],
-            revision_instruction=st.session_state["messages"][-1]["content"],
-            last_db_error=flow["last_db_error"],
-        )
+        try:
+            rev = api_client.revise(
+                question=flow["question"],
+                sql=flow["sql"],
+                explanation=flow["explanation"],
+                instruction=st.session_state["messages"][-1]["content"],
+                last_db_error=flow["last_db_error"],
+            )
+        except api_client.ApiError as exc:
+            _append({"type": "error", "content": f"Could not revise the SQL: {exc}"})
+            _set_flow(state="AWAITING_APPROVAL", edit_attempts=flow["edit_attempts"] - 1)
+            st.rerun()
+    new_sql, new_explanation = rev["sql"], rev["explanation"]
 
-    if new_sql == UNCLEAR_INSTRUCTION:
+    if rev["unclear"]:
         _append({"type": "warning", "content": "Unclear instruction. Can you please rephrase?"})
         _set_flow(state="AWAITING_REVISION_INSTRUCTION", edit_attempts=flow["edit_attempts"] - 1)
     else:
@@ -491,63 +487,34 @@ if _flow()["state"] == "REVISING":
 
 if _flow()["state"] == "EXECUTING":
     flow = _flow()
-    with st.spinner("Executing query..."):
+    with st.spinner("Executing query and generating insights..."):
         try:
-            columns, rows, db_errors = step_execute(flow["sql"])
+            # The API runs the query read-only, logs the correction record, and explains the result.
+            result = api_client.execute(
+                question=flow["question"],
+                sql=flow["sql"],
+                proposed_sql=flow["proposed_sql"],
+                revision_history=flow["revision_history"],
+            )
             _set_flow(last_db_error=None)
-        except Exception as exc:
-            _append({"type": "error", "content": f"Query failed after retries: {exc}"})
+        except api_client.ApiError as exc:
+            _append({"type": "error", "content": f"Query failed: {exc}"})
             _set_flow(state="IDLE", last_db_error=str(exc))
             st.rerun()
 
-    display_rows = rows[:200]
-    _append({"type": "results", "columns": columns, "rows": display_rows})
+    columns, rows = result["columns"], result["rows"]
+    _append({"type": "results", "columns": columns, "rows": rows[:200]})
     _append({"type": "chart",   "columns": columns, "rows": rows})
-    _set_flow(state="EXPLAINING")
+    if result["truncated"]:
+        _append({"type": "warning", "content": f"The query returned {result['row_count']:,} rows; only the first {len(rows):,} were sent to the browser."})
 
-    # Log the event (silent)
-    log_query_event(
-        question=flow["question"],
-        proposed_sql=flow["proposed_sql"],
-        revision_history=flow["revision_history"],
-        final_sql=flow["sql"],
-        db_errors=db_errors,
-        row_count=len(rows),
-    )
+    summary = result["insights"] or result["insights_error"] or "No insights were generated."
+    _append({"type": "insights", "content": summary})
+
+    # Update conversation history so follow-up questions have context
+    append_assistant_turn(st.session_state["conv_history"], sql=flow["sql"], summary=summary)
+
     st.session_state["queries_run"] += 1
-    st.rerun()
-
-
-# ── EXPLAINING ───────────────────────────────────────────────────────────────
-
-if _flow()["state"] == "EXPLAINING":
-    flow = _flow()
-    # Retrieve rows from the last results event
-    results_event = next(
-        (e for e in reversed(st.session_state["messages"]) if e["type"] == "results"),
-        None,
-    )
-    if results_event:
-        with st.spinner("Generating insights..."):
-            try:
-                summary = step_explain(
-                    flow["question"],
-                    flow["sql"],
-                    results_event["columns"],
-                    results_event["rows"],
-                )
-            except Exception as exc:
-                summary = f"Could not generate insights: {exc}"
-
-        _append({"type": "insights", "content": summary})
-
-        # Update conversation history so follow-up questions have context
-        append_assistant_turn(
-            st.session_state["conv_history"],
-            sql=flow["sql"],
-            summary=summary,
-        )
-
     _set_flow(state="IDLE")
     st.rerun()
 
@@ -556,44 +523,40 @@ if _flow()["state"] == "EXPLAINING":
 
 if _flow()["state"] == "MULTI_QUERY_RUNNING":
     flow = _flow()
-    progress_placeholder = st.empty()
-
-    def _progress(msg: str) -> None:
-        progress_placeholder.info(msg)
-
-    with st.spinner("Running multi-part analysis..."):
-        report = run_multi_query_analysis(
-            broad_question=flow["question"],
-            conversation_history=st.session_state["conv_history"],
-            progress_callback=_progress,
-        )
-
-    progress_placeholder.empty()
+    # No live per-step progress: /analyze is one blocking HTTP call (see docs/api-notes.md).
+    with st.spinner("Running multi-part analysis (this can take a minute)..."):
+        try:
+            report = api_client.analyze(flow["question"], st.session_state["conv_history"])
+        except api_client.ApiError as exc:
+            _append({"type": "error", "content": f"Analysis failed: {exc}"})
+            _set_flow(state="IDLE")
+            st.rerun()
 
     # Append sub-results as individual expandable events
-    for i, sr in enumerate(report.sub_results, 1):
+    for i, sr in enumerate(report["sub_results"], 1):
         _append({
             "type": "multi_query_subresult",
             "index": i,
-            "sub_question": sr.sub_question,
-            "sql": sr.sql,
-            "columns": sr.columns,
-            "rows": sr.rows[:200],
-            "summary": sr.summary,
-            "error": sr.error,
+            "sub_question": sr["sub_question"],
+            "sql": sr["sql"],
+            "columns": sr["columns"],
+            "rows": sr["rows"],
+            "summary": sr["summary"],
+            "error": sr["error"],
         })
 
-    _append({"type": "multi_query_report", "markdown": report.report_markdown})
+    report_md = report["report_markdown"]
+    _append({"type": "multi_query_report", "markdown": report_md})
 
     # Update conversation history with executive summary (first paragraph of report)
-    exec_summary = report.report_markdown.split("\n\n")[1] if "\n\n" in report.report_markdown else report.report_markdown[:500]
+    exec_summary = report_md.split("\n\n")[1] if "\n\n" in report_md else report_md[:500]
     append_assistant_turn(
         st.session_state["conv_history"],
         sql="(multi-query analysis)",
         summary=exec_summary,
     )
 
-    st.session_state["queries_run"] += len(report.sub_results)
+    st.session_state["queries_run"] += len(report["sub_results"])
     _set_flow(state="IDLE")
     st.rerun()
 
@@ -619,7 +582,6 @@ if question and not is_busy:
     append_user_turn(st.session_state["conv_history"], question)
     _set_flow(
         question=question,
-        rag_context=[],
         sql="",
         explanation="",
         proposed_sql="",
@@ -630,7 +592,10 @@ if question and not is_busy:
 
     # Check if this is a broad analytical question
     with st.spinner("Analysing question scope..."):
-        broad = is_broad_question(question)
+        try:
+            broad = api_client.scope(question)
+        except api_client.ApiError:
+            broad = False  # fall through to the normal path, which will surface any API error
 
     if broad:
         _append({"type": "multi_query_start", "question": question})
@@ -648,25 +613,17 @@ if _flow()["state"] == "GENERATING":
     flow = _flow()
     with st.spinner("Retrieving context and generating SQL..."):
         try:
-            rag_context = step_rag(flow["question"])
-            sql, explanation = step_generate(
-                flow["question"],
-                rag_context,
-                conversation_history=st.session_state["conv_history"],
-            )
-        except Exception as exc:
+            # The current question is already the last entry in conv_history; the API expects
+            # prior turns only, so send everything before it.
+            proposal = api_client.ask(flow["question"], st.session_state["conv_history"][:-1])
+        except api_client.ApiError as exc:
             _append({"type": "error", "content": f"Could not generate SQL: {exc}"})
             _set_flow(state="IDLE")
             st.rerun()
 
-    if not sql:
-        _append({"type": "error", "content": "No SQL was generated. Please rephrase your question."})
-        _set_flow(state="IDLE")
-        st.rerun()
-
+    sql, explanation = proposal["sql"], proposal["explanation"]
     _append({"type": "proposed_sql", "reason": explanation, "sql": sql})
     _set_flow(
-        rag_context=rag_context,
         sql=sql,
         explanation=explanation,
         proposed_sql=sql,

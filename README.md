@@ -72,12 +72,15 @@ python -m agent "What was our GMV per month last year?"
 
 ### Streamlit web UI
 
+The UI is a thin client: it talks to the HTTP API below (through `api_client.py`) and imports none of the agent code. Start the API first, then the UI, with the same `API_KEY` in both environments (or in `.env`):
+
 ```bash
 cd "AI Agent"
-streamlit run app.py
+uvicorn api:app --port 8000          # terminal 1
+streamlit run app.py                 # terminal 2 (set API_URL if the API is not on localhost:8000)
 ```
 
-The UI still calls the agent code directly. Moving it onto the HTTP API below is the next step.
+The CLI (`python -m agent`) still calls the agent code directly.
 
 ### HTTP API
 
@@ -94,6 +97,9 @@ Stateless human-in-the-loop flow; the client carries the conversation and the cu
 | `POST /ask` | question (+ optional history) → proposed SQL + explanation. Nothing is executed. |
 | `POST /revise` | current SQL + plain-English instruction → revised SQL (or `unclear: true`) |
 | `POST /execute` | approved SQL → rows, auto-correction errors, plain-English insights |
+| `POST /scope` | is this question broad enough to need a multi-part analysis? |
+| `POST /analyze` | broad question → sub-analyses and a synthesised report (slow; runs its sub-queries without a per-query approval step) |
+| `GET /schema/status` | live table count and any drift between the schema catalog and the database |
 | `POST /feedback` | thumbs up/down on a result, logged to `feedback_log.jsonl` |
 | `GET /health` | liveness plus a database round-trip (no key) |
 
@@ -136,9 +142,10 @@ python -m pytest tests -q
 | `sql_generator.py` | Builds SQL via OpenAI Chat; includes full schema + few-shot examples in system prompt |
 | `sql_correction.py` | On SQL execution error, asks the model for a corrected query and retries |
 | `sql_errors.py` | Classifies Postgres errors (missing column/table, syntax) into hints for the correction prompt |
-| `agent_core.py` | Pure-function wrappers for each step (RAG, generate, execute, explain); used by both CLI and Streamlit |
+| `agent_core.py` | Pure-function wrappers for each step (RAG, generate, execute, explain); used by the CLI and the API |
 | `agent.py` | CLI flow: question → propose → approve/edit → execute → explain |
-| `api.py` | FastAPI service: `/ask`, `/revise`, `/execute`, `/feedback`, `/health` |
+| `api.py` | FastAPI service: `/ask`, `/revise`, `/execute`, `/scope`, `/analyze`, `/schema/status`, `/feedback`, `/health` |
+| `api_client.py` | HTTP client the Streamlit UI uses to call the API |
 | `app.py` | Streamlit web UI |
 | `insights.py` | Generates plain-English summary + business insights from query results |
 | `schema_loader.py` | Loads `schema_catalog.yml`, validates it against the live DB schema, renders the schema block for prompts |
@@ -157,6 +164,7 @@ python -m pytest tests -q
 | `PG_READER_USER` / `PG_READER_PASSWORD` | `olist_reader` / `olist_reader_pw` | SELECT-only role used by the agent (**local-dev defaults**) |
 | `PG_ADMIN_DSN` / `PG_READER_DSN` | built from the above | Full connection strings; override the individual settings |
 | `API_KEY` | (none) | Key required in the `X-API-Key` header; unset means the API refuses requests (503) |
+| `API_URL` | `http://localhost:8000` | Where the Streamlit UI finds the API |
 | `CORS_ORIGINS` | (empty) | Comma-separated browser origins allowed to call the API; empty means none |
 | `API_MAX_RESPONSE_ROWS` | `1000` | Rows returned per `/execute`; the full count is still reported |
 | `OLIST_DB_PATH` | `./olist.sqlite` | SQLite source file for the migration only |
