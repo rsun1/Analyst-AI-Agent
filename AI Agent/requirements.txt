@@ -1,28 +1,16 @@
-# Web scraping
-playwright>=1.41.0
-html5lib>=1.1
-
-# Search engine
-duckduckgo-search>=7.2.1
-
-# LLM integration
-openai>=1.59.8 # o1 support
-anthropic>=0.42.0
+# Runtime dependencies: CLI agent, HTTP API and Streamlit UI.
+# Streamlit Community Cloud installs this file (it is the one next to app.py).
+# The API container installs the smaller requirements-api.txt instead.
+openai>=1.0.0
 python-dotenv>=1.0.0
-
-# Testing
-unittest2>=1.1.0
-pytest>=8.0.0
-pytest-asyncio>=0.23.5
-
-# Google Generative AI
-google-generativeai
-
-# gRPC, for Google Generative AI preventing WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
-grpcio==1.70.0
+pyyaml>=6.0
+streamlit>=1.32.0
+requests>=2.31
+plotly>=5.0
+pandas>=2.0.0
 psycopg[binary]>=3.2
+psycopg-pool>=3.2
 pgvector>=0.3
 fastapi>=0.115
 uvicorn[standard]>=0.30
 pytest>=8.0
-psycopg-pool>=3.2
