@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import concurrent.futures
+import time
 
 import openai
 from dotenv import load_dotenv
@@ -14,7 +15,7 @@ client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 def load_test_dataset(path="evals/test_dataset.json"):
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -25,6 +26,63 @@ def _is_empty_result(rows: list) -> bool:
     return all(all(v is None for v in row) for row in rows)
 
 
+_EMPTY_HINT = (
+    "\n\n[SYSTEM HINT: the previous attempt returned no rows. "
+    "If this question involves a product category name (e.g. 'electronics', "
+    "'sports_leisure'), make sure to JOIN product_category_name_translation "
+    "and filter on product_category_name_english, NOT product_category_name. "
+    "Re-check all join paths and column names.]"
+)
+
+
+def run_agent_api(question: str) -> tuple[str, str]:
+    """
+    Same flow as run_agent, but against a running HTTP API (set EVAL_API_URL and
+    EVAL_API_KEY), e.g. the deployed service. Note /execute writes a query_log row.
+    """
+    import requests
+
+    base = os.environ["EVAL_API_URL"].rstrip("/")
+    headers = {"X-API-Key": os.getenv("EVAL_API_KEY", "")}
+
+    def call(path, body):
+        # Retry gateway/connection blips (free-tier hosts restart or drop requests briefly)
+        # so an infrastructure hiccup is not scored as a wrong answer.
+        waits = [15, 30, 60]
+        for attempt in range(len(waits) + 1):
+            try:
+                r = requests.post(f"{base}{path}", json=body, headers=headers, timeout=90)
+                transient = r.status_code in (500, 502, 503, 504, 522)
+            except requests.RequestException as e:
+                r, transient, err = None, True, str(e)
+            if not transient or attempt == len(waits):
+                break
+            print(f"    • {path} transient failure, retry in {waits[attempt]}s...", flush=True)
+            time.sleep(waits[attempt])
+        if r is None:
+            raise RuntimeError(f"{path} unreachable after retries: {err}")
+        if r.status_code >= 400:
+            raise RuntimeError(f"{path} -> HTTP {r.status_code}: {r.text[:200]}")
+        return r.json()
+
+    try:
+        print("    • /ask ...", flush=True)
+        sql = call("/ask", {"question": question}).get("sql", "")
+        if not sql:
+            return "", "[ERROR: No SQL was generated]"
+        print("    • /execute ...", flush=True)
+        res = call("/execute", {"question": question, "sql": sql})
+        if _is_empty_result(res["rows"]):
+            print("    • empty result — retrying with hint...", flush=True)
+            sql2 = call("/ask", {"question": question + _EMPTY_HINT}).get("sql", "")
+            if sql2:
+                sql = sql2
+                res = call("/execute", {"question": question, "sql": sql})
+        return sql, res.get("insights") or res.get("insights_error") or ""
+    except Exception as e:
+        return "", f"[ERROR: {e}]"
+
+
 def run_agent(question: str) -> tuple[str, str]:
     """
     Run the full agent pipeline on a question (auto-approving the SQL)
@@ -32,6 +90,9 @@ def run_agent(question: str) -> tuple[str, str]:
     Retries SQL generation once if the query executes but returns empty/null results.
     On failure, sql is "" and summary is an [ERROR: ...] string.
     """
+    if os.getenv("EVAL_API_URL"):
+        return run_agent_api(question)
+
     from agent_core import step_explain, step_execute, step_generate, step_rag
 
     try:
@@ -231,7 +292,8 @@ def run_eval(
         with concurrent.futures.ThreadPoolExecutor() as executor:
             future = executor.submit(run_agent, question)
             try:
-                agent_sql, agent_answer = future.result(timeout=60)
+                # Live-API mode may legitimately spend minutes retrying through a restart.
+                agent_sql, agent_answer = future.result(timeout=420 if os.getenv("EVAL_API_URL") else 60)
             except concurrent.futures.TimeoutError:
                 print("    • timeout exceeded!", flush=True)
                 agent_sql = ""
@@ -291,7 +353,7 @@ def run_eval(
     print(f"  Documented:         {documented}  (known_failure — excluded from score)")
     print(f"{'=' * 60}")
 
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
     print(f"\nResults saved to {output_path}")
 
