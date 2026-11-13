@@ -4,6 +4,25 @@ Python application that lets stakeholders ask natural-language questions about t
 
 > **Versions.** `main` is **v2**: Postgres + pgvector. The original SQLite + JSON-vector-store implementation is preserved at the git tag `v1-constrained`.
 
+## Live demo
+
+**Try it: https://analyst-ai-agent-olist.streamlit.app/**
+
+Ask a question about the Olist e-commerce data in plain English. The agent proposes SQL and an explanation; you approve or edit it, then it runs the query read-only and explains the result.
+
+```
+Streamlit Cloud (UI)  ->  HTTPS + API key  ->  FastAPI on Koyeb (AI Builder Space)  ->  Neon Postgres + pgvector
+                                                      |
+                                                      +-> OpenAI (SQL generation, embeddings, insights)
+```
+
+- **Free tiers, not always on.** Each layer sleeps when idle, so the first request after a quiet period can take several extra seconds (or need one retry). Hosting is free for 12 months from the first deploy (2026-11-13).
+- **Read-only by design.** Generated SQL runs as a `SELECT`-only database role in a read-only session with a statement timeout and a row cap.
+- **Logging.** Questions, SQL edits and feedback are stored in Postgres (an INSERT-only role) to track human corrections.
+- **Measured on the deployed stack.** The eval suite can target a live API (`EVAL_API_URL` / `EVAL_API_KEY`, see [Evaluation](#evaluation)): 12/17 PASS (70.6%), the same as the v1 baseline. Details of the deploy: [`docs/streamlit-cloud.md`](docs/streamlit-cloud.md).
+
+---
+
 # Why This Exists
 Most enterprise analytics teams can't use vector databases, open-source models, or send raw data to external APIs. Security policies, compliance requirements, and IT governance make the standard RAG tutorial stack unavailable by default.
 
@@ -196,6 +215,12 @@ python -m pytest tests -q
 ```bash
 cd "AI Agent"
 python evals/scorer.py
+```
+
+To run the same eval against a deployed API instead of the local agent code (retries gateway blips so infrastructure hiccups are not scored as wrong answers):
+
+```bash
+EVAL_API_URL=https://<your-api-host> EVAL_API_KEY=<api key> python evals/scorer.py evals/eval_results_live.json
 ```
 
 Results are written to `evals/eval_results_latest.json` by default; pass a path to choose another (`python evals/scorer.py evals/my_run.json`). `evals/eval_results.json` is the committed v1 baseline and is never overwritten by default; the v2 runs are saved as `evals/eval_results_pg*.json`. Each entry records the question, agent SQL, agent answer, expected answer, factual accuracy (PASS/FAIL/PARTIAL/DOCUMENTED), answer quality (1–3), and judge reasoning.
