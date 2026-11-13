@@ -1,0 +1,9 @@
+# Runtime deps for the API container only (no Streamlit/pandas/plotly/pytest).
+openai>=1.0.0
+python-dotenv>=1.0.0
+pyyaml>=6.0
+psycopg[binary]>=3.2
+psycopg-pool>=3.2
+pgvector>=0.3
+fastapi>=0.115
+uvicorn[standard]>=0.30

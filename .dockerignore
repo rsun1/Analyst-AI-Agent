@@ -1,0 +1,18 @@
+.git/
+.gitignore
+.env
+**/.env
+**/__pycache__/
+**/*.pyc
+**/.devcontainer/
+**/tests/
+**/*.md
+!AI Agent/olist_schema_queries.md
+**/query_log.jsonl
+**/feedback_log.jsonl
+**/olist.sqlite
+**/embeddings_store.json
+**/evals/
+**/*.ipynb
+**/tools/
+docs/
