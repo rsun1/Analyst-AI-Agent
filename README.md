@@ -24,7 +24,7 @@ The remaining failures are documented too. A system you can't honestly evaluate 
 - **Docker** (runs Postgres + pgvector locally)
 - **Dependencies:** `openai`, `python-dotenv`, `pyyaml`, `streamlit`, `psycopg`, `pgvector` (and others). Install with:
   ```bash
-  pip install -r requirements.txt
+  pip install -r requirements-agent.txt
   ```
 - **`.env`** in the `AI Agent/` folder containing:
   ```

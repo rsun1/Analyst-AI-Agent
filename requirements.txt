@@ -1,0 +1,9 @@
+# Dependencies for the Streamlit UI only (Streamlit Community Cloud installs this file).
+# It lives at the repo root on purpose: the app's folder name contains a space ("AI Agent"),
+# and Streamlit Cloud's installer breaks on a requirements path with a space.
+# CLI agent / tests / ingestion: AI Agent/requirements-agent.txt. API container: AI Agent/requirements-api.txt.
+streamlit>=1.32.0
+requests>=2.31
+python-dotenv>=1.0.0
+plotly>=5.0
+pandas>=2.0.0

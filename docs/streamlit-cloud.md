@@ -9,7 +9,7 @@ The UI is a thin client: it only calls the HTTP API (`api_client.py`), so it nee
    API_URL = "https://<service>.ai-builders.space"
    API_KEY = "<same value as the API service's API_KEY>"
    ```
-4. Deploy. Dependencies come from `AI Agent/requirements.txt` (the file next to `app.py`).
+4. Deploy. Dependencies come from the repo-root `requirements.txt` (UI-only). It must not live in `AI Agent/`: Streamlit Cloud looks next to the app first, and its installer fails on the space in that folder name.
 
 Notes
 - Secrets live only in Streamlit's settings, never in git. Anyone with the UI URL can use the API through it, so keep the app private or share it only with people you trust: the key is held server-side and not shown to visitors.
