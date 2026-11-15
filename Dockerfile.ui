@@ -1,0 +1,23 @@
+# Streamlit UI image (talks to the API over HTTP; no database or OpenAI access needed).
+# Build from the repo root:  docker build -f Dockerfile.ui -t olist-ui .
+FROM python:3.10-slim
+
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
+    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Only the modules the UI imports (app -> api_client, chart, conversation -> config).
+COPY ["AI Agent/app.py", "AI Agent/api_client.py", "AI Agent/chart.py", "AI Agent/conversation.py", "AI Agent/config.py", "./"]
+
+RUN useradd --create-home appuser && chown -R appuser /app
+USER appuser
+
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD python -c "import os,urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:'+os.environ.get('PORT','8080')+'/_stcore/health').status==200 else 1)"
+
+# API_URL and API_KEY come from the environment (never the image).
+CMD ["sh", "-c", "streamlit run app.py --server.port=${PORT:-8080} --server.address=0.0.0.0 --server.headless=true --server.enableXsrfProtection=true"]
