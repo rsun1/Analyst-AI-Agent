@@ -374,4 +374,9 @@ def run_eval(
 if __name__ == "__main__":
     # Usage: python evals/scorer.py [output_path]
     # The default output is NOT evals/eval_results.json, which holds the committed v1 baseline.
+    # Windows consoles/pipes default to a legacy code page (e.g. cp950) and crash on
+    # characters in agent answers; never let printing kill a long eval run.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
     run_eval(output_path=sys.argv[1]) if len(sys.argv) > 1 else run_eval()

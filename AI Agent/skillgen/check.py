@@ -38,6 +38,12 @@ TIEOUTS: dict[str, tuple[str, str, str, float]] = {
     "revenue_by_product_category": ("main", "revenue", """SELECT SUM(oi.price) FROM order_items oi
         JOIN products p ON p.product_id = oi.product_id
         JOIN product_category_name_translation t ON t.product_category_name = p.product_category_name""", 1e-6),
+    "aov": ("overall", "row0:aov", "SELECT ROUND((SUM(payment_value) / COUNT(DISTINCT order_id))::numeric, 2) FROM order_payments", 1e-9),
+    "revenue_growth_mom": ("main", "gmv", "SELECT SUM(payment_value) FROM order_payments", 1e-6),
+    "items_per_order": ("main", "row0:orders", "SELECT COUNT(DISTINCT order_id) FROM order_items", 0),
+    "orders_by_status": ("main", "order_count", "SELECT COUNT(*) FROM orders", 0),
+    "cancellation_rate": ("by_month", "canceled", "SELECT COUNT(*) FROM orders WHERE order_status = 'canceled'", 0),
+    "orders_by_weekday_hour": ("by_weekday", "order_count", "SELECT COUNT(*) FROM orders", 0),
     "top_10_sellers_by_revenue": ("main", "row0:total_revenue", """SELECT SUM(price + freight_value) FROM order_items
         GROUP BY seller_id ORDER BY 1 DESC LIMIT 1""", 1e-6),
 }
