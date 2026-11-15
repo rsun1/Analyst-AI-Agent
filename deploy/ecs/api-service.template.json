@@ -1,0 +1,70 @@
+{
+  "serviceName": "olist-api",
+  "cluster": "olist",
+  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/olist-ecs-execution-role",
+  "infrastructureRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/olist-ecs-infrastructure-role",
+  "healthCheckPath": "/health",
+  "cpu": "256",
+  "memory": "512",
+  "cpuArchitecture": "X86_64",
+  "primaryContainer": {
+    "image": "<ACCOUNT_ID>.dkr.ecr.us-east-2.amazonaws.com/olist-api:latest",
+    "containerPort": 8080,
+    "awsLogsConfiguration": {
+      "logGroup": "/ecs/olist-api",
+      "logStreamPrefix": "api"
+    },
+    "environment": [
+      {
+        "name": "DB_POOL_MAX",
+        "value": "3"
+      },
+      {
+        "name": "ENV",
+        "value": "prod"
+      },
+      {
+        "name": "PORT",
+        "value": "8080"
+      },
+      {
+        "name": "USE_SKILLS",
+        "value": "1"
+      },
+      {
+        "name": "UI_BASE_URL",
+        "value": "<UI_URL>"
+      }
+    ],
+    "secrets": [
+      {
+        "valueFrom": "arn:aws:secretsmanager:us-east-2:<ACCOUNT_ID>:secret:olist/app-<SUFFIX>:OPENAI_API_KEY::",
+        "name": "OPENAI_API_KEY"
+      },
+      {
+        "valueFrom": "arn:aws:secretsmanager:us-east-2:<ACCOUNT_ID>:secret:olist/app-<SUFFIX>:API_KEY::",
+        "name": "API_KEY"
+      },
+      {
+        "valueFrom": "arn:aws:secretsmanager:us-east-2:<ACCOUNT_ID>:secret:olist/app-<SUFFIX>:PG_READER_DSN::",
+        "name": "PG_READER_DSN"
+      },
+      {
+        "valueFrom": "arn:aws:secretsmanager:us-east-2:<ACCOUNT_ID>:secret:olist/app-<SUFFIX>:PG_LOGGER_DSN::",
+        "name": "PG_LOGGER_DSN"
+      }
+    ]
+  },
+  "scalingTarget": {
+    "minTaskCount": 1,
+    "maxTaskCount": 2,
+    "autoScalingMetric": "AVERAGE_CPU",
+    "autoScalingTargetValue": 60
+  },
+  "tags": [
+    {
+      "key": "project",
+      "value": "olist-analytics-agent"
+    }
+  ]
+}

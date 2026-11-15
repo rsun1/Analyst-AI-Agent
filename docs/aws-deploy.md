@@ -1,79 +1,84 @@
-# Deploying to AWS (first pass: ECS Express Mode + RDS)
+# Deploying to AWS (ECS Express Mode + RDS)
 
-Target for a first deploy: **RDS Postgres (pgvector) + two containers (API, UI) on ECS Express Mode**, each with a public HTTPS URL. This replaces Koyeb (API), Neon (database) and Streamlit Cloud (UI). Rebuilding the same thing as plain Fargate + ALB (and writing down what Express Mode hides) is the next step, see ROADMAP.md.
+This is the runbook behind the "Deploying on AWS" section of the README. It reproduces the deployment that is running: **RDS PostgreSQL (pgvector) + two containers (API, UI) on ECS Express Mode**, each with a public HTTPS URL.
 
-> Status: written without access to an AWS account, so console labels and CLI flags are **unverified**. Check each step against the current AWS docs and fix this file as you go.
+> Status: every command below was run against a real account (region `us-east-2`, Windows PowerShell 5.1, AWS CLI 2.40). Console labels may change; the CLI calls are the reliable part. Replace `<ACCOUNT_ID>`, `<rds-endpoint>` and the other placeholders with your own values, and never paste secrets into chat, commits or logs.
 
 ```
-Browser -> UI service (Streamlit, ECS) --HTTPS + X-API-Key--> API service (FastAPI, ECS) --> RDS Postgres + pgvector
-                                                                       \--> OpenAI
-Secrets Manager: OPENAI_API_KEY, API_KEY, PG_READER_DSN, PG_LOGGER_DSN      CloudWatch: logs from both services
+Browser -> UI service (Streamlit) --HTTPS + X-API-Key--> API service (FastAPI) --> RDS Postgres + pgvector
+                                                                  \--> OpenAI
+Secrets Manager: OPENAI_API_KEY, API_KEY, PG_READER_DSN, PG_LOGGER_DSN      CloudWatch Logs: both services
 ```
 
-## Order of work (about 2 hours if the account sign-up goes through quickly)
+## 0. Account and guard rails
+1. Sign up, enable MFA on the root user, and **create a budget alert** (Billing > Budgets) before creating anything.
+2. Sign in the CLI: `aws login --region us-east-2 --profile olist-aws`, then `aws sts get-caller-identity --profile olist-aws`.
+3. Use one region for everything. Some account types are tied to a single region.
 
-| Min | Step |
-|---|---|
-| 0-25 | Account, root MFA, **budget alert**, admin IAM user |
-| 25-40 | AWS CLI + credentials; pick one region and stay in it |
-| 40-65 | RDS instance (starts in ~10 min) and security group |
-| 65-85 | Load data into RDS from your laptop; enable pgvector |
-| 85-100 | ECR repos, build and push both images |
-| 100-130 | API service (Express Mode), then UI service |
-| 130-150 | Verify, run the live eval against the new URL, write down the cost |
+## 1. RDS PostgreSQL
+Create an instance: PostgreSQL, `db.t4g.micro`, 20 GB gp3, single AZ, default VPC, master user of your choice with **"Managed in AWS Secrets Manager"** credentials, storage autoscaling off, enhanced monitoring off, backup retention 1 day.
+- While loading data, set **Public access: Yes** and allow port 5432 **only from your IP** in the instance's security group.
+- Check with read-only calls: `aws rds describe-db-instances --db-instance-identifier <id> --query "DBInstances[0].{status:DBInstanceStatus,public:PubliclyAccessible,endpoint:Endpoint.Address,secret:MasterUserSecret.SecretArn}"`.
 
-## 0. Account and guard rails (do these first)
-1. Sign up at aws.amazon.com (card + phone verification; activation can take a while).
-2. **Root user: enable MFA.** Never use root for daily work.
-3. **Billing > Budgets**: create a monthly cost budget of USD 20 with email alerts at 50% and 100%. (Also turn on "Billing alerts"/Cost Explorer.)
-4. IAM: create an admin user (or IAM Identity Center user) for yourself. For the CLI create an access key, and **delete the key when you are done**. Do not commit it or paste it anywhere.
-
-## 1. CLI
+## 2. Load the data
 ```powershell
-winget install -e --id Amazon.AWSCLI
-aws configure          # key id, secret, region (e.g. us-east-1), output json
-aws sts get-caller-identity
+$env:PG_READER_PASSWORD = "<28+ letters and digits>"   # save both in a password manager
+$env:PG_LOGGER_PASSWORD = "<28+ letters and digits>"
+.\scripts\aws\load_rds.ps1 -Endpoint <rds-endpoint> -SecretArn <master-secret-arn> [-WithSkills]
 ```
+The script reads the master password from Secrets Manager into memory, creates the `olist` database, checks that pgvector is available, then runs `migrate_to_postgres`, `setup_logging_db` and `ingest` (and `ingest_skills` with `-WithSkills`). Expect: all eleven tables loaded, 35 schema chunks, roles `olist_reader` (SELECT only) and `olist_logger` (INSERT only).
 
-## 2. RDS Postgres
-Console > RDS > Create database: **PostgreSQL 16**, template *Free tier* or *Dev/Test*, `db.t4g.micro`, 20 GB gp3, single AZ, master user `olist_admin` with a strong password, DB name `olist`.
-- Connectivity: default VPC; **Public access: Yes** for now (so your laptop can load the data); create a security group allowing **5432 only from your IP** (`https://checkip.amazonaws.com`).
-- After loading data, switch **Public access to No** and allow 5432 only from the ECS services' security group.
-- Cost: roughly USD 13-15/month while running; you can **Stop temporarily** (auto-restarts after 7 days).
-
-## 3. Load data (from your laptop, in `AI Agent/`)
+## 3. Runtime secrets
 ```powershell
-$env:PG_ADMIN_DSN = "postgresql://olist_admin:<admin-pw>@<rds-endpoint>:5432/olist?sslmode=require"
-$env:PG_READER_PASSWORD = "<long mixed reader password>"
-$env:PG_LOGGER_PASSWORD = "<long mixed logger password>"
-$env:OPENAI_API_KEY = "<key>"
-python -m migrate_to_postgres
-python -m setup_logging_db --import-jsonl
-python -m ingest
-# only if deploying the skills branch:  python -m ingest_skills
+.\scripts\aws\create_app_secret.ps1 -Endpoint <rds-endpoint>     # creates/updates secret "olist/app", prints only its ARN
 ```
-(`CREATE EXTENSION vector` is run by `ingest`; the RDS master user is allowed to.)
 
-## 4. Secrets
-Secrets Manager > Store a new secret (one JSON secret named `olist/app`):
-`OPENAI_API_KEY`, `API_KEY`, `PG_READER_DSN`, `PG_LOGGER_DSN` (DSNs use the **RDS endpoint**, roles `olist_reader` / `olist_logger`, `?sslmode=require`).
-Give the ECS task execution role `secretsmanager:GetSecretValue` on that secret only (least privilege).
-
-## 5. Images
+## 4. Images
 ```powershell
-.\scripts\aws\push_images.ps1 -Region us-east-1        # builds both images, creates ECR repos, pushes
+.\scripts\aws\push_images.ps1 -Region us-east-2 -Profile olist-aws -Tag v1
 ```
+Builds `Dockerfile` (API) and `Dockerfile.ui` (UI) from the repo root and pushes them to ECR. Notes: it logs in with a temporary Docker config (the `aws login` ECR token is too large for the Windows Credential Manager) and checks every exit code. Use a new tag for each release and keep the last good one.
 
-## 6. Services (ECS Express Mode)
-Console > ECS > Express Mode > Create service. For the **API**: image `olist-api`, container port **8080**, health check path **`/health`**, CPU 0.5 vCPU / 1 GB, env/secrets from `olist/app` (plus `DB_POOL_MAX=3`, `ENV=prod`). Note the generated HTTPS URL.
-For the **UI**: image `olist-ui`, port **8080**, health check path **`/_stcore/health`**, env `API_URL=<API url>` and `API_KEY` from the secret.
-Inspect what Express Mode created (cluster, service, task definition, ALB, security groups, roles): that list is the material for the "what Express Mode hides" ADR.
+## 5. IAM roles, cluster, logs
+```powershell
+$acct = "<ACCOUNT_ID>"; $p = "--profile","olist-aws"
+# policy file with your account id filled in
+(Get-Content deploy\iam\read-app-secret.template.json -Raw).Replace("<ACCOUNT_ID>", $acct) | Set-Content $env:TEMP\read-app-secret.json -Encoding ASCII
+
+aws iam create-role --role-name olist-ecs-execution-role --assume-role-policy-document file://deploy/iam/trust-ecs-tasks.json @p
+aws iam attach-role-policy --role-name olist-ecs-execution-role --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy @p
+aws iam put-role-policy --role-name olist-ecs-execution-role --policy-name read-olist-app-secret --policy-document file://$env:TEMP\read-app-secret.json @p
+
+aws iam create-role --role-name olist-ecs-infrastructure-role --assume-role-policy-document file://deploy/iam/trust-ecs.json @p
+aws iam attach-role-policy --role-name olist-ecs-infrastructure-role --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSInfrastructureRoleforExpressGatewayServices @p
+
+aws ecs create-cluster --cluster-name olist @p --region us-east-2
+foreach ($g in "/ecs/olist-api","/ecs/olist-ui") { aws logs create-log-group --log-group-name $g @p --region us-east-2; aws logs put-retention-policy --log-group-name $g --retention-in-days 14 @p --region us-east-2 }
+```
+The execution role can read **only** the `olist/app` secret. If the first service call fails with "Unable to assume the service linked role", wait a minute and retry (the roles need a moment to propagate).
+
+## 6. Services
+Copy `deploy/ecs/*.template.json`, replace `<ACCOUNT_ID>`, `<SUFFIX>` (the random suffix of the `olist/app` secret ARN), and the URL placeholders, then create the **API first**:
+```powershell
+aws ecs create-express-gateway-service --cli-input-json file://api-service.json --profile olist-aws --region us-east-2
+```
+- Each call returns the service's HTTPS URL (`ingressPaths[0].endpoint`). The service takes about 3 to 4 minutes to start; the URL answers 503 until the load balancer health check passes.
+- Put the API's URL in the UI template's `API_URL`, and the UI's URL in the API template's `UI_BASE_URL`, then create the UI service. (If you create the API before you know the UI URL, update it afterwards with the update command below.)
+- **Allow the API to reach the database:** find the API service's security group (`aws ec2 describe-security-groups --filters Name=vpc-id,Values=<vpc-id>`, the one whose description names the service) and add an inbound rule on the **database's** security group: TCP 5432 from that group.
 
 ## 7. Verify
-- `Invoke-RestMethod <api-url>/health` returns ok; ask one question through the UI.
-- Live eval: `$env:EVAL_API_URL="<api-url>"; $env:EVAL_API_KEY=$env:API_KEY; python evals/scorer.py evals/eval_results_aws_run1.json` (expect about 10-13 of 17).
-- CloudWatch Logs: both services log; the API prints one JSON line per request.
-- Restrict the UI (it spends your OpenAI credits): anyone with the URL can use it. Options: keep the URL private, put the ALB behind an IP allowlist, or add auth later.
+- `Invoke-RestMethod <api-url>/health` returns `{"status":"ok"}` (it also queries the database).
+- Without the key, any other endpoint returns 401. With the key (read it from Secrets Manager into a variable; do not print it): `POST /ask`, then `POST /execute`.
+- Open the UI URL and ask a question. Check `aws logs tail /ecs/olist-api --since 10m`.
+- Evals against the deployed API: `EVAL_API_URL=<api-url>` and `EVAL_API_KEY=<key>` with `python evals/scorer.py` (about 10 to 13 of 17).
 
-## 8. Cleanup / cost
-Stop RDS when idle; delete both services and the ECR images when you are finished with the demo; delete the IAM access key. Check Billing the next day.
+## 8. Releasing and rolling back
+```powershell
+.\scripts\aws\push_images.ps1 -Region us-east-2 -Profile olist-aws -Tag v2
+# update-express-gateway-service replaces the whole container definition, so send the full one:
+aws ecs update-express-gateway-service --cli-input-json file://api-update.json --profile olist-aws --region us-east-2
+```
+`api-update.json` has `serviceArn`, `executionRoleArn`, `healthCheckPath` and the complete `primaryContainer` (image, port, logs, environment, secrets) with the new tag. Roll back by sending the previous tag. A rollout takes about 7 minutes. Watch it with `aws ecs describe-services --cluster olist --services olist-api --query "services[0].deployments"`.
+
+## 9. After the demo
+Make the database private (turn off public access; the services reach it through their security group), restrict or remove the public URLs, and **stop paying**: delete both services (`aws ecs delete-express-gateway-service --service-arn <arn>`), stop or delete the RDS instance, delete unused ECR images, and delete any CLI access keys. Check the Billing page the next day.

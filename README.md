@@ -19,7 +19,85 @@ Streamlit Cloud (UI)  ->  HTTPS + API key  ->  FastAPI on Koyeb (AI Builder Spac
 - **Free tiers, not always on.** Each layer sleeps when idle, so the first request after a quiet period can take several extra seconds (or need one retry). Hosting is free for 12 months from the first deploy (2026-11-13).
 - **Read-only by design.** Generated SQL runs as a `SELECT`-only database role in a read-only session with a statement timeout and a row cap.
 - **Logging.** Questions, SQL edits and feedback are stored in Postgres (an INSERT-only role) to track human corrections.
+- **Also on AWS.** The same app runs on ECS Fargate with RDS; see [Deploying on AWS](#deploying-on-aws). The demo link for that deployment is shared on request.
 - **Measured on the deployed stack.** The eval suite can target a live API (`EVAL_API_URL` / `EVAL_API_KEY`, see [Evaluation](#evaluation)): 12/17 PASS (70.6%), the same as the v1 baseline. Details of the deploy: [`docs/streamlit-cloud.md`](docs/streamlit-cloud.md).
+
+## Deploying on AWS
+
+The same two containers (API and UI) also run on AWS. This is the "production-shaped" deployment: a managed database, containers on Fargate behind a load balancer, secrets kept out of the image, and logs in CloudWatch. It is deployed with the AWS CLI and a few PowerShell scripts, not yet with infrastructure-as-code.
+
+```
+Browser ──HTTPS──> Application Load Balancer ──> ECS Fargate: UI (Streamlit)
+                              │                          │  HTTPS + X-API-Key
+                              └────────────────────────> ECS Fargate: API (FastAPI)
+                                                              │            │
+                                                     RDS PostgreSQL        └──> OpenAI
+                                                     (+ pgvector)
+        Secrets Manager: OPENAI_API_KEY, API_KEY, PG_READER_DSN, PG_LOGGER_DSN      CloudWatch Logs: /ecs/olist-api, /ecs/olist-ui
+```
+
+| Piece | What it is |
+|---|---|
+| Region | `us-east-2` |
+| Images | Two ECR repositories, `olist-api` (`Dockerfile`) and `olist-ui` (`Dockerfile.ui`). The API image is about 64 MB and runs as a non-root user; the UI image ships only the modules the UI imports. |
+| Compute | One ECS cluster, `olist`, with two **ECS Express Mode** services on Fargate: API (0.25 vCPU, 0.5 GB, 1 to 2 tasks) and UI (0.5 vCPU, 1 GB). Express Mode creates the load balancer, target groups, security groups and auto scaling. |
+| Database | RDS for PostgreSQL 18, `db.t4g.micro`, 20 GB gp3, single AZ, pgvector 0.8. The master password is managed by RDS in Secrets Manager. |
+| Secrets | One secret, `olist/app`, holds the four runtime values and is injected into the containers as environment variables. Nothing sensitive is in the image, the repo or the task definition. |
+| IAM | `olist-ecs-execution-role` (pull images, write logs, read **only** `olist/app`) and `olist-ecs-infrastructure-role` (AWS managed policy for Express Mode). |
+| Logs | CloudWatch log groups with 14 days of retention. The API writes one JSON line per request. |
+
+**Security model.** The agent's SQL runs as a `SELECT`-only database role in a read-only session with a statement timeout; a separate `INSERT`-only role writes the logs. The database accepts connections only from the API service's security group (plus one admin IP while loading data). Every API endpoint except `/health` needs the `X-API-Key` header, and the key is held by the UI container, not the browser. The public URL has **no login**, so anyone with the link can use the UI; see the limits below.
+
+### Deploy it yourself
+
+The steps below are what produced the running deployment. You need an AWS account, the AWS CLI (logged in, for example `aws login --profile olist-aws`), Docker and PowerShell. More detail is in [`docs/aws-deploy.md`](docs/aws-deploy.md).
+
+```powershell
+# 1. Database: create an RDS PostgreSQL instance (console or CLI), then load the data.
+#    Reads the master password from Secrets Manager and never prints it.
+$env:PG_READER_PASSWORD = "<long letters and digits>"
+$env:PG_LOGGER_PASSWORD = "<long letters and digits>"
+.\scripts\aws\load_rds.ps1 -Endpoint <rds-endpoint> -SecretArn <master-secret-arn> [-WithSkills]
+
+# 2. Runtime secrets (reads the OpenAI key from "AI Agent\.env"; generates API_KEY if unset)
+.\scripts\aws\create_app_secret.ps1 -Endpoint <rds-endpoint>
+
+# 3. Images: build both and push them to ECR (creates the repositories)
+.\scripts\aws\push_images.ps1 -Region us-east-2 -Profile olist-aws -Tag v1
+
+# 4. IAM roles, ECS cluster and log groups (the two roles are described in the table above)
+
+# 5. Services: fill the placeholders in deploy/ecs/*.template.json, then
+aws ecs create-express-gateway-service --cli-input-json file://deploy/ecs/api-service.template.json
+aws ecs create-express-gateway-service --cli-input-json file://deploy/ecs/ui-service.template.json
+```
+
+After the API service is up, allow its security group to reach port 5432 on the database's security group, and put the API's URL in the UI service's `API_URL`. Express Mode returns each service's HTTPS URL when it is created.
+
+**Releasing a new version.** Push images with a new tag, then run `aws ecs update-express-gateway-service` with the full container definition and the new image. A rollout takes about 7 minutes while old and new tasks overlap. Rolling back means pointing the service at the previous tag, so keep the last known-good tag in ECR.
+
+**Switching the orchestrator on.** Run `python -m ingest_skills` against the database (the `-WithSkills` flag above does it) and set `USE_SKILLS=1` on the API service. The API then routes each question to a metric skill, to a dashboard link, or to a "not computable" explanation. Set `UI_BASE_URL` to the UI's address so dashboard links point to it.
+
+### What it costs
+
+These are estimates from AWS list prices, so check the Billing console. The load balancer and RDS are the main items, and Fargate is small at these sizes. Expect roughly USD 55 to 70 a month while everything runs; a new account's credits cover the first months. To stop paying, delete both Express services (`aws ecs delete-express-gateway-service`) and stop or delete the RDS instance. Set a budget alert before you start.
+
+### Gotchas (so you don't have to hit them)
+
+- **ECR login fails on Windows with `aws login` credentials.** The ECR token (about 4,000 bytes) is larger than the Windows Credential Manager accepts (`The stub received bad data`). `push_images.ps1` logs in with a temporary Docker config that stores the token in a plain file, deleted when the script ends. It also pipes the token inside `cmd.exe`, because PowerShell's pipe corrupts it.
+- **`.dockerignore` and Markdown.** The skills are `.md` files, which an ignore rule excluded, so they were missing from the image until an explicit `!` exception was added.
+- **A 503 right after creating a service.** The load balancer returns 503 until its health checks pass (a few minutes). The container logs show the health check hitting `/health`, which also proves the database connection.
+- **A new account can lack the ECS service-linked role.** The first `create-express-gateway-service` call can fail with "Unable to assume the service linked role" for a moment after the roles are created; retrying works.
+- **Connection pooling.** The app sets `statement_timeout` and a read-only transaction as connection options, and a transaction pooler rejects these, so connect to the database directly.
+
+### Known limits and next steps
+
+- **Public URL without a login.** Fine for a short demo with an OpenAI spending limit, not for anything longer. Next: restrict the load balancer to known IPs or put authentication in front of the UI.
+- **Generated hostname.** A custom domain needs a certificate and changes made outside Express Mode; not done.
+- **No infrastructure-as-code or CI/CD.** The steps above are scripts and CLI calls. Next: rebuild the same stack as plain ECS Fargate plus an ALB with Terraform or CDK, and write down what Express Mode hides.
+- **RDS is still reachable from one admin IP** (used to load data). It should be switched to private once the data is loaded.
+- **Observability stops at logs.** There are no alarms, no failure dashboard by type, and no evals in CI against the deployed endpoint yet.
+- **Accuracy.** About 70% on the evaluation set (12 of 17 scored questions). The approval step exists so a person checks the SQL before it runs.
 
 ---
 

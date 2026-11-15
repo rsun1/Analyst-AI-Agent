@@ -1,0 +1,46 @@
+{
+  "serviceName": "olist-ui",
+  "cluster": "olist",
+  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/olist-ecs-execution-role",
+  "infrastructureRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/olist-ecs-infrastructure-role",
+  "healthCheckPath": "/_stcore/health",
+  "cpu": "512",
+  "memory": "1024",
+  "cpuArchitecture": "X86_64",
+  "primaryContainer": {
+    "image": "<ACCOUNT_ID>.dkr.ecr.us-east-2.amazonaws.com/olist-ui:latest",
+    "containerPort": 8080,
+    "awsLogsConfiguration": {
+      "logGroup": "/ecs/olist-ui",
+      "logStreamPrefix": "ui"
+    },
+    "environment": [
+      {
+        "value": "<API_URL>",
+        "name": "API_URL"
+      },
+      {
+        "value": "8080",
+        "name": "PORT"
+      }
+    ],
+    "secrets": [
+      {
+        "valueFrom": "arn:aws:secretsmanager:us-east-2:<ACCOUNT_ID>:secret:olist/app-<SUFFIX>:API_KEY::",
+        "name": "API_KEY"
+      }
+    ]
+  },
+  "scalingTarget": {
+    "minTaskCount": 1,
+    "maxTaskCount": 1,
+    "autoScalingMetric": "AVERAGE_CPU",
+    "autoScalingTargetValue": 70
+  },
+  "tags": [
+    {
+      "key": "project",
+      "value": "olist-analytics-agent"
+    }
+  ]
+}
