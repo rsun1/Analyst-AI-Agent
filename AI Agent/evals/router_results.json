@@ -1,0 +1,892 @@
+[
+  {
+    "id": "001",
+    "question": "How many orders were delivered successfully?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "orders_by_status"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "orders_by_status"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "002",
+    "question": "What are the top 5 product categories by total revenue? Answer in English names.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "revenue_by_product_category"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "revenue_by_product_category"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "003",
+    "question": "What is the average review score by product category for the top 5 highest-selling categories?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "category_review_score"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "average_review_score_per_order",
+      "revenue_by_product_category"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": "pending"
+  },
+  {
+    "id": "004",
+    "question": "Which payment method is most commonly used?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "payment_type_breakdown"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "payment_type_breakdown"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "005",
+    "question": "What is the average delivery time in days since order purchased?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "delivery_time_days"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "delivery_delay_vs_estimate"
+    ],
+    "fallback": true,
+    "route_ok": true,
+    "skill_ok": "pending"
+  },
+  {
+    "id": "006",
+    "question": "Which state has the highest number of customers?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "customers_by_state"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "customer_order_count"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": "pending"
+  },
+  {
+    "id": "007",
+    "question": "What is the total revenue generated from orders placed in 2017?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "monthly_gmv"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "monthly_gmv"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "008",
+    "question": "What are the top 10 sellers'(based on their number of orders) average review scores?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "seller_scorecard"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "top_10_sellers_by_revenue",
+      "average_review_score_per_order"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": "pending"
+  },
+  {
+    "id": "009",
+    "question": "What is the average price of products in the 'electronics' category?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "top_products"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "revenue_by_product_category"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": "pending"
+  },
+  {
+    "id": "010",
+    "question": "How many orders were delivered successfully in July 2017, and is that more or less than the previous month?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "orders_per_month"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "orders_by_status"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": false
+  },
+  {
+    "id": "011",
+    "question": "What is the distribution of review scores for products in the 'books_general_interest' category?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "category_review_score"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "average_review_score_per_order",
+      "monthly_average_review_score"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": "pending"
+  },
+  {
+    "id": "012",
+    "question": "What is the average delivery time for orders in the 'sports_leisure' category?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "delivery_time_by_category"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "order_approval_lag"
+    ],
+    "fallback": true,
+    "route_ok": true,
+    "skill_ok": "pending"
+  },
+  {
+    "id": "013",
+    "question": "How many leads were qualified and closed in the last quarter of 2017 (leads first contact time can be any time before closed)? and what is the conversion rate of qualified leads to closed leads in the last quarter of 2017?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "lead_conversion_count"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "lead_conversion_count",
+      "conversion_rate_by_origin"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "014",
+    "question": "Which origin channel has the highest conversion rate of qualified leads to closed leads in the last quarter of 2017?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "conversion_rate_by_origin"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "conversion_rate_by_origin"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "015",
+    "question": "What is the average time from first contact to lead closed for each origin channel in the last quarter of 2017?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "sales_cycle_days"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "lead_conversion_count",
+      "conversion_rate_by_origin"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": "pending"
+  },
+  {
+    "id": "016",
+    "question": "How many products have zero reviews?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "products_without_reviews"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "reviews_with_comments"
+    ],
+    "fallback": true,
+    "route_ok": true,
+    "skill_ok": "pending"
+  },
+  {
+    "id": "017",
+    "question": "How many sellers have above average revenue but below average review scores?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "seller_scorecard"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "top_10_sellers_by_revenue",
+      "average_review_score_per_order"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": "pending"
+  },
+  {
+    "id": "018",
+    "question": "What month had the highest order volume in 2017?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "orders_per_month"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "orders_per_month"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "019",
+    "question": "Who are the best customers?",
+    "expected_route": [
+      "clarify",
+      "analyze"
+    ],
+    "expected_skills": [],
+    "got_route": "analyze",
+    "got_skills": [
+      "customer_order_count"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": null
+  },
+  {
+    "id": "020",
+    "question": "What is the average freight value for sellers in São Paulo compared to other states?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "avg_freight_value_by_state"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "freight_to_price_ratio_by_category",
+      "sales_by_customer_state"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": "pending"
+  },
+  {
+    "id": "R01",
+    "question": "What was the GMV in each month of 2017?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "monthly_gmv"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "monthly_gmv"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R02",
+    "question": "How much did customers pay in total per month?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "monthly_gmv"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "monthly_gmv"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R03",
+    "question": "Which month had the highest gross merchandise value?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "monthly_gmv"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "monthly_gmv"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R04",
+    "question": "What are the top 5 product categories by revenue?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "revenue_by_product_category"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "revenue_by_product_category"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R05",
+    "question": "How much revenue did health and beauty bring in?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "revenue_by_product_category"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "revenue_by_product_category"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R06",
+    "question": "Which sellers sold the most in November 2017?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "seller_tpv_per_month"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "top_10_sellers_by_revenue"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": false
+  },
+  {
+    "id": "R07",
+    "question": "Who are our top 10 sellers?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "top_10_sellers_by_revenue"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "top_10_sellers_by_revenue"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R08",
+    "question": "Rank sellers by total revenue",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "top_10_sellers_by_revenue"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "top_10_sellers_by_revenue"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R09",
+    "question": "How many orders did we get each month?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "orders_per_month"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "orders_per_month"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R10",
+    "question": "Which month in 2017 had the most orders?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "orders_per_month"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "orders_per_month"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R11",
+    "question": "Which Brazilian states generate the most sales?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "sales_by_customer_state"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "sales_by_customer_state"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R12",
+    "question": "Total sales for customers in Rio de Janeiro (RJ)",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "sales_by_customer_state"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "sales_by_customer_state"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R13",
+    "question": "What percentage of payments are made by credit card?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "payment_type_breakdown"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "payment_type_breakdown"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R14",
+    "question": "How popular is boleto compared to other payment methods?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "payment_type_breakdown"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "payment_type_breakdown"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R15",
+    "question": "How many installments do customers typically choose?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "avg_installments_by_payment_type"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "avg_installments_by_payment_type"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R16",
+    "question": "How many customers placed more than one order?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "customer_order_count"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "customer_order_count"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R17",
+    "question": "What is the average review score?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "average_review_score_per_order"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "monthly_average_review_score"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": false
+  },
+  {
+    "id": "R18",
+    "question": "How did the average review score trend month over month?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "monthly_average_review_score"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "monthly_average_review_score"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R19",
+    "question": "How many reviews include a written comment?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "reviews_with_comments"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "reviews_with_comments"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R20",
+    "question": "How late are deliveries compared with the estimated date?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "delivery_delay_vs_estimate"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "delivery_delay_vs_estimate"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R21",
+    "question": "How many orders arrived after the estimated delivery date?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "delivery_delay_vs_estimate"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "delivery_delay_vs_estimate"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R22",
+    "question": "Which categories have the highest freight cost relative to price?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "freight_to_price_ratio_by_category"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "freight_to_price_ratio_by_category"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R23",
+    "question": "How many qualified leads turned into closed deals?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "lead_conversion_count"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "lead_conversion_count"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R24",
+    "question": "Which lead origin channel converts best?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "conversion_rate_by_origin"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "conversion_rate_by_origin"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R25",
+    "question": "Conversion rate for organic search leads",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "conversion_rate_by_origin"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "conversion_rate_by_origin"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R26",
+    "question": "How many leads came from orders placed by customers in SP between July and August 2017?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "leads_generated_from_orders_by_period_and_state"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "leads_generated_from_orders_by_period_and_state"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R27",
+    "question": "Which sellers with orders in 2017 are in the closed leads pipeline?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "seller_order_volume_with_lead_status"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "seller_order_volume_with_lead_status"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R28",
+    "question": "Which states have the highest lead conversion rates?",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "lead_conversion_rate_by_customer_state"
+    ],
+    "got_route": "analyze",
+    "got_skills": [
+      "lead_conversion_rate_by_customer_state"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R29",
+    "question": "Show me the executive dashboard",
+    "expected_route": "redirect",
+    "expected_skills": [
+      "executive_overview"
+    ],
+    "got_route": "redirect",
+    "got_skills": [
+      "executive_overview"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R30",
+    "question": "How is the business doing overall?",
+    "expected_route": "redirect",
+    "expected_skills": [
+      "executive_overview"
+    ],
+    "got_route": "redirect",
+    "got_skills": [
+      "executive_overview"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R31",
+    "question": "I need a monthly business review",
+    "expected_route": "redirect",
+    "expected_skills": [
+      "executive_overview"
+    ],
+    "got_route": "redirect",
+    "got_skills": [
+      "executive_overview"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R32",
+    "question": "Where can I see all the key KPIs together?",
+    "expected_route": "redirect",
+    "expected_skills": [
+      "executive_overview"
+    ],
+    "got_route": "redirect",
+    "got_skills": [
+      "executive_overview"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R33",
+    "question": "What is our gross margin?",
+    "expected_route": "not_computable",
+    "expected_skills": [
+      "gross_margin"
+    ],
+    "got_route": "not_computable",
+    "got_skills": [
+      "gross_margin"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R34",
+    "question": "Which products are the most profitable?",
+    "expected_route": "not_computable",
+    "expected_skills": [
+      "gross_margin"
+    ],
+    "got_route": "not_computable",
+    "got_skills": [
+      "gross_margin"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R35",
+    "question": "What is the profit per order?",
+    "expected_route": "not_computable",
+    "expected_skills": [
+      "gross_margin"
+    ],
+    "got_route": "not_computable",
+    "got_skills": [
+      "gross_margin"
+    ],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": true
+  },
+  {
+    "id": "R36",
+    "question": "What is the weather in Sao Paulo today?",
+    "expected_route": "out_of_scope",
+    "expected_skills": [],
+    "got_route": "out_of_scope",
+    "got_skills": [],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": null
+  },
+  {
+    "id": "R37",
+    "question": "Write me a poem about marketplaces",
+    "expected_route": "out_of_scope",
+    "expected_skills": [],
+    "got_route": "out_of_scope",
+    "got_skills": [],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": null
+  },
+  {
+    "id": "R38",
+    "question": "hello",
+    "expected_route": "out_of_scope",
+    "expected_skills": [],
+    "got_route": "out_of_scope",
+    "got_skills": [],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": null
+  },
+  {
+    "id": "R39",
+    "question": "numbers",
+    "expected_route": "clarify",
+    "expected_skills": [],
+    "got_route": "clarify",
+    "got_skills": [],
+    "fallback": false,
+    "route_ok": true,
+    "skill_ok": null
+  },
+  {
+    "id": "R40",
+    "question": "tell me about sales",
+    "expected_route": "clarify",
+    "expected_skills": [],
+    "got_route": "redirect",
+    "got_skills": [
+      "executive_overview"
+    ],
+    "fallback": false,
+    "route_ok": false,
+    "skill_ok": null
+  }
+]

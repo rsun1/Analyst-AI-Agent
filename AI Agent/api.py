@@ -43,7 +43,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 import agent_core
-from config import API_KEY, API_MAX_RESPONSE_ROWS, CORS_ORIGINS
+from config import API_KEY, API_MAX_RESPONSE_ROWS, CORS_ORIGINS, USE_SKILLS
+from dashboards import BUILDERS as DASHBOARD_BUILDERS
+from dashboards import build_link as build_dashboard_link
+from dashboards import clean_params as clean_dashboard_params
 from db import close_pool, get_connection
 from logger import log_feedback_event, log_query_event
 from multi_query import is_broad_question, run_multi_query_analysis
@@ -153,8 +156,13 @@ class AskRequest(BaseModel):
 
 
 class ProposedSQL(BaseModel):
-    sql: str
-    explanation: str
+    sql: str = ""
+    explanation: str = ""
+    # Orchestrator fields (only meaningful when USE_SKILLS is on).
+    route: Literal["analyze", "redirect", "not_computable", "clarify", "out_of_scope"] = "analyze"
+    skills: list[str] = Field(default_factory=list, description="Skill(s) the orchestrator selected.")
+    message: str | None = Field(default=None, description="Text to show for non-analyze routes.")
+    dashboard_url: str | None = Field(default=None, description="Deep link for redirect routes.")
 
 
 class ReviseRequest(BaseModel):
@@ -255,11 +263,50 @@ def health():
 def ask(req: AskRequest):
     """Retrieve context and propose SQL with a short explanation. Nothing is executed."""
     history = [t.model_dump(exclude_none=True) for t in req.history]
-    rag_context = agent_core.step_rag(req.question)
+    skills: list[str] = []
+    route = "analyze"
+    if USE_SKILLS:
+        decision = agent_core.step_route(req.question)
+        route, skills = decision.route, decision.skills
+        if route != "analyze":
+            return _non_analyze_response(decision)
+        rag_context = agent_core.step_skill_context(skills) or agent_core.step_rag(req.question)
+    else:
+        rag_context = agent_core.step_rag(req.question)
     sql, explanation = agent_core.step_generate(req.question, rag_context, history or None)
     if not sql:
         raise HTTPException(502, "The model did not return a usable SQL query. Try rephrasing.")
-    return ProposedSQL(sql=sql, explanation=explanation)
+    return ProposedSQL(sql=sql, explanation=explanation, route="analyze", skills=skills)
+
+
+def _non_analyze_response(decision) -> ProposedSQL:
+    """Build the response for redirect / not_computable / clarify / out_of_scope routes (no SQL)."""
+    skill = agent_core.get_skill(decision.skills[0]) if decision.skills else None
+    if decision.route == "redirect" and skill and skill.meta.dashboard:
+        url = build_dashboard_link(skill.meta.dashboard, decision.params)
+        return ProposedSQL(route="redirect", skills=decision.skills, dashboard_url=url,
+                           message=f"{skill.meta.title}: {skill.meta.description}")
+    if decision.route == "not_computable" and skill:
+        return ProposedSQL(route="not_computable", skills=decision.skills,
+                           message=skill.body.split("## Definition", 1)[-1].strip())
+    if decision.route == "clarify":
+        return ProposedSQL(route="clarify", message=decision.message or "Could you say more about what you want to measure?")
+    return ProposedSQL(route="out_of_scope", skills=decision.skills,
+                       message=decision.message or "This assistant answers questions about the Olist e-commerce data (sales, orders, delivery, reviews, sellers, leads).")
+
+
+@app.get("/dashboards/{name}", tags=["dashboards"], dependencies=[Depends(require_api_key)])
+def dashboard(name: str, state: str | None = None, date_from: str | None = None, date_to: str | None = None):
+    """Data for a dashboard page. Only allowlisted, validated parameters are used."""
+    builder = DASHBOARD_BUILDERS.get(name)
+    skill = agent_core.get_skill(name)
+    if builder is None or skill is None or skill.meta.dashboard is None:
+        raise HTTPException(404, f"Unknown dashboard '{name}'.")
+    params = clean_dashboard_params(skill.meta.dashboard, {"state": state, "date_from": date_from, "date_to": date_to})
+    try:
+        return builder(params)
+    except psycopg.Error as e:
+        raise HTTPException(503, f"Database error while building the dashboard: {str(e).strip().splitlines()[0]}")
 
 
 @app.post("/revise", response_model=ReviseResponse, tags=["agent"], dependencies=[Depends(require_api_key)])

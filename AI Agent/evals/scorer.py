@@ -14,9 +14,11 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
-def load_test_dataset(path="evals/test_dataset.json"):
+def load_test_dataset(path="evals/test_dataset.json", include_routing_only=False):
+    """Records with eval_type 'routing_only' have no expected answer: only router_eval.py uses them."""
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        data = json.load(f)
+    return data if include_routing_only else [r for r in data if r.get("eval_type") != "routing_only"]
 
 
 def _is_empty_result(rows: list) -> bool:
@@ -96,8 +98,21 @@ def run_agent(question: str) -> tuple[str, str]:
     from agent_core import step_explain, step_execute, step_generate, step_rag
 
     try:
-        print("    • retrieving RAG context...", flush=True)
-        rag_context = step_rag(question)
+        from config import USE_SKILLS
+        if USE_SKILLS:
+            import agent_core
+            print("    • routing...", flush=True)
+            decision = agent_core.step_route(question)
+            print(f"    • route={decision.route} skills={decision.skills}", flush=True)
+            if decision.route != "analyze":
+                # No SQL is produced for these routes; the judge scores the message the user would see.
+                skill = agent_core.get_skill(decision.skills[0]) if decision.skills else None
+                text = decision.message or (skill.meta.description if skill else "")
+                return "", f"[ROUTE {decision.route}] {text}"
+            rag_context = agent_core.step_skill_context(decision.skills) or step_rag(question)
+        else:
+            print("    • retrieving RAG context...", flush=True)
+            rag_context = step_rag(question)
         print("    • generating SQL...", flush=True)
         sql, _ = step_generate(question, rag_context)
         if not sql:
@@ -361,4 +376,9 @@ def run_eval(
 if __name__ == "__main__":
     # Usage: python evals/scorer.py [output_path]
     # The default output is NOT evals/eval_results.json, which holds the committed v1 baseline.
+    # Windows consoles/pipes default to a legacy code page (e.g. cp950) and crash on
+    # characters in agent answers; never let printing kill a long eval run.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
     run_eval(output_path=sys.argv[1]) if len(sys.argv) > 1 else run_eval()

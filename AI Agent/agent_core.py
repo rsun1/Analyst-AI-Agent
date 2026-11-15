@@ -2,6 +2,8 @@
 Pure-function wrappers for each agent step.
 No CLI I/O here — usable by both app.py (Streamlit) and agent.py (CLI).
 """
+import functools
+
 import psycopg
 
 from config import MAX_SQL_RETRIES
@@ -11,6 +13,8 @@ from rag import retrieve
 from schema_loader import render_live_schema_block
 from sql_correction import get_corrected_sql
 from sql_errors import classify_db_error
+from router import RouteDecision, route_question
+from skill_loader import Skill, skills_by_name
 from sql_generator import UNCLEAR_INSTRUCTION, generate_sql_and_explanation, revise_sql
 
 
@@ -31,6 +35,25 @@ def step_introspect_schema(db_path: str | None = None) -> str:
 def step_rag(question: str) -> list[str]:
     """Retrieve RAG context chunks for the question."""
     return retrieve(question)
+
+
+@functools.lru_cache(maxsize=1)
+def _skills() -> dict[str, Skill]:
+    return skills_by_name()
+
+
+def get_skill(name: str) -> Skill | None:
+    return _skills().get(name)
+
+
+def step_route(question: str) -> RouteDecision:
+    """Orchestrator: pick the route and skill(s) for the question (see router.py)."""
+    return route_question(question)
+
+
+def step_skill_context(skill_names: list[str]) -> list[str]:
+    """Context chunks (definition + tested SQL + pitfalls) for the selected skills."""
+    return [s.context_text() for n in skill_names if (s := get_skill(n))]
 
 
 def step_generate(

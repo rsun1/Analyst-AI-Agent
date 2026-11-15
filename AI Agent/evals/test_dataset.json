@@ -5,7 +5,11 @@
     "expected_sql": "SELECT COUNT(*) FROM orders WHERE order_status = 'delivered' AND order_delivered_customer_date IS NOT NULL",
     "expected_answer_english": "96,470 orders were successfully delivered.",
     "eval_type": "answer_verification",
-    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "orders_by_status"
+    ]
   },
   {
     "id": "002",
@@ -13,7 +17,11 @@
     "expected_sql": "SELECT p.product_category_name_english, SUM(oi.price) as revenue FROM order_items oi JOIN products p ON oi.product_id = p.product_id JOIN product_category_name_translation pct ON p.product_category_name = pct.product_category_name GROUP BY 1 ORDER BY 2 DESC LIMIT 5",
     "expected_answer_english": "Top 5 categories ranked by total sales amount are:\n1. 'beauty_health', 1258681.34\n2. 'watches_gifts', 1205005.68\n3. 'bed_bath_table', 1036988.68\n4. 'sports_leisure', 988048.97\n5. 'computers_accessories', 911954.32",
     "eval_type": "answer_verification",
-    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "revenue_by_product_category"
+    ]
   },
   {
     "id": "003",
@@ -21,7 +29,11 @@
     "expected_sql": "WITH top_categories AS (\n  SELECT p.product_category_name, SUM(oi.price) as revenue\n  FROM order_items oi\n  JOIN products p ON oi.product_id = p.product_id\n  GROUP BY 1\n  ORDER BY 2 DESC\n  LIMIT 5\n)\nSELECT p.product_category_name, AVG(r.review_score) as avg_review_score\nFROM order_reviews r\nJOIN orders o ON r.order_id = o.order_id\nJOIN order_items oi ON o.order_id = oi.order_id\nJOIN products p ON oi.product_id = p.product_id\nWHERE p.product_category_name IN (SELECT product_category_name FROM top_categories)\nGROUP BY 1\nORDER BY 2 DESC",
     "expected_answer_english": "Average review scores per category for the top 5 highest-selling categories are:\n1. 'cds_dvds_musicals', 4.642857142857143\n2. 'fashion_childrens_clothes', 4.5\n3. 'books_general_interest', 4.446265938069216\n4. 'construction_tools_tools', 4.444444444444445\n5. 'flowers', 4.419354838709677",
     "eval_type": "known_failure",
-    "eval_criteria": "Multi-hop CTE with reviews + categories consistently exceeds the 60s pipeline timeout on SQLite. Skipped from scoring."
+    "eval_criteria": "Multi-hop CTE with reviews + categories consistently exceeds the 60s pipeline timeout on SQLite. Skipped from scoring.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "category_review_score"
+    ]
   },
   {
     "id": "004",
@@ -29,7 +41,11 @@
     "expected_sql": "SELECT payment_type, COUNT(*) FROM order_payments GROUP BY 1 ORDER BY 2 DESC LIMIT 1",
     "expected_answer_english": "Credit card is the most used payment method.",
     "eval_type": "answer_verification",
-    "eval_criteria": "Agent's answer should be the same as the expected answer."
+    "eval_criteria": "Agent's answer should be the same as the expected answer.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "payment_type_breakdown"
+    ]
   },
   {
     "id": "005",
@@ -37,7 +53,11 @@
     "expected_sql": "SELECT AVG(JULIANDAY(order_delivered_customer_date) - JULIANDAY(order_purchase_timestamp)) FROM orders WHERE order_delivered_customer_date IS NOT NULL",
     "expected_answer_english": "Average delivery time is approximately 12.5 days.",
     "eval_type": "answer_verification",
-    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "delivery_time_days"
+    ]
   },
   {
     "id": "006",
@@ -45,7 +65,11 @@
     "expected_sql": "SELECT customer_state, COUNT(*) FROM customers GROUP BY 1 ORDER BY 2 DESC LIMIT 1",
     "expected_answer_english": "The state with the highest number of customers is São Paulo (SP).",
     "eval_type": "answer_verification",
-    "eval_criteria": "Agent's answer should be the same as the expected answer."
+    "eval_criteria": "Agent's answer should be the same as the expected answer.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "customers_by_state"
+    ]
   },
   {
     "id": "007",
@@ -53,7 +77,11 @@
     "expected_sql": "SELECT SUM(price) FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.order_purchase_timestamp >= '2017-01-01' AND o.order_purchase_timestamp < '2018-01-01'",
     "expected_answer_english": "Total revenue generated from orders placed in 2017 (sum of order_items.price) is approximately 6.16 million Brazilian Reais.",
     "eval_type": "answer_verification",
-    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "monthly_gmv"
+    ]
   },
   {
     "id": "008",
@@ -61,7 +89,11 @@
     "expected_sql": "SELECT sellers.seller_id, AVG(order_reviews.review_score) AS avg_review_score, SUM(order_items.price) AS total_sales, COUNT(orders.order_id) AS num_orders FROM sellers LEFT JOIN order_items ON sellers.seller_id = order_items.seller_id LEFT JOIN orders ON order_items.order_id = orders.order_id LEFT JOIN order_reviews ON orders.order_id = order_reviews.order_id GROUP BY  sellers.seller_id ORDER BY num_orders DESC LIMIT 10",
     "expected_answer_english": "Top 10 sellers by order volume show average review scores ranging from 3.35 to 4.23, with most sellers scoring above 3.8.",
     "eval_type": "answer_verification",
-    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "seller_scorecard"
+    ]
   },
   {
     "id": "009",
@@ -69,7 +101,11 @@
     "expected_sql": "SELECT AVG(price) FROM products p JOIN product_category_name_translation pct ON p.product_category_name = pct.product_category_name JOIN order_items oi ON oi.product_id = p.product_id WHERE pct.product_category_name_english = 'electronics'",
     "expected_answer_english": "The average price of products in the 'electronics' category is approximately 57.9 Brazilian Reais.",
     "eval_type": "answer_verification",
-    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "top_products"
+    ]
   },
   {
     "id": "010",
@@ -77,7 +113,11 @@
     "expected_sql": null,
     "expected_answer_english": null,
     "eval_type": "ambiguity_handling",
-    "eval_criteria": "'Delivered in July' is ambiguous: it can mean orders delivered in July (by delivery date) or orders placed in July that were delivered (by purchase date). The agent should either ask which is meant, OR state its interpretation explicitly. If it states one, its numbers must match that interpretation: by delivery date, 3455 in July vs 3223 in June; by purchase date (delivered orders), 3872 in July vs 3135 in June. Failure: silently picking an interpretation without saying so, or giving numbers that do not match the stated interpretation."
+    "eval_criteria": "'Delivered in July' is ambiguous: it can mean orders delivered in July (by delivery date) or orders placed in July that were delivered (by purchase date). The agent should either ask which is meant, OR state its interpretation explicitly. If it states one, its numbers must match that interpretation: by delivery date, 3455 in July vs 3223 in June; by purchase date (delivered orders), 3872 in July vs 3135 in June. Failure: silently picking an interpretation without saying so, or giving numbers that do not match the stated interpretation.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "orders_per_month"
+    ]
   },
   {
     "id": "011",
@@ -85,7 +125,11 @@
     "expected_sql": "SELECT review_score, COUNT(*) FROM order_reviews r JOIN orders o ON r.order_id = o.order_id JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id JOIN product_category_name_translation pct ON p.product_category_name = pct.product_category_name WHERE pct.product_category_name_english = 'books_general_interest' GROUP BY review_score ORDER BY review_score",
     "expected_answer_english": "The distribution of review scores for products in the 'books_general_interest' category is as follows:\n1. Score 1: 39 reviews\n2. Score 2: 8 reviews\n3. Score 3: 20 reviews\n4. Score 4: 84 reviews\n5. Score 5: 398 reviews",
     "eval_type": "answer_verification",
-    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "category_review_score"
+    ]
   },
   {
     "id": "012",
@@ -93,7 +137,11 @@
     "expected_sql": "SELECT AVG(JULIANDAY(order_delivered_customer_date) - JULIANDAY(order_purchase_timestamp)) FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id JOIN product_category_name_translation pct ON p.product_category_name = pct.product_category_name WHERE pct.product_category_name_english = 'sports_leisure' AND o.order_delivered_customer_date IS NOT NULL",
     "expected_answer_english": "The average delivery time for orders in the 'sports_leisure' category is approximately 12.15 days.",
     "eval_type": "answer_verification",
-    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "delivery_time_by_category"
+    ]
   },
   {
     "id": "013",
@@ -101,7 +149,11 @@
     "expected_sql": "SELECT COUNT(DISTINCT lq.mql_id) AS qualified_leads, COUNT(DISTINCT lc.mql_id) AS closed_leads, (COUNT(DISTINCT lc.mql_id) * 1.0 / COUNT(DISTINCT lq.mql_id)) AS conversion_rate FROM leads_qualified lq LEFT JOIN leads_closed lc ON lq.mql_id = lc.mql_id WHERE lq.first_contact_date BETWEEN '2017-10-01' AND '2017-12-31'",
     "expected_answer_english": "A total of 1061 leads were qualified and 43 leads were closed in the last quarter of 2017. Conversion rate is 4.05%",
     "eval_type": "answer_verification",
-    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "lead_conversion_count"
+    ]
   },
   {
     "id": "014",
@@ -109,7 +161,11 @@
     "expected_sql": "SELECT origin, (COUNT(DISTINCT lc.mql_id) * 1.0 / COUNT(DISTINCT lq.mql_id)) AS conversion_rate FROM leads_qualified lq LEFT JOIN leads_closed lc ON lq.mql_id = lc.mql_id WHERE lq.first_contact_date BETWEEN '2017-10-01' AND '2017-12-31' GROUP BY origin ORDER BY conversion_rate DESC LIMIT 1",
     "expected_answer_english": "The origin channel with the highest conversion rate of qualified leads to closed leads in the last quarter of 2017 is paid search, with conversion rate of 7.3%.",
     "eval_type": "answer_verification",
-    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "conversion_rate_by_origin"
+    ]
   },
   {
     "id": "015",
@@ -117,7 +173,11 @@
     "expected_sql": "SELECT origin, AVG(JULIANDAY(lc.won_date) - JULIANDAY(lq.first_contact_date)) AS avg_time_to_won FROM leads_qualified lq join leads_closed lc on lq.mql_id = lc.mql_id WHERE lq.first_contact_date BETWEEN '2017-10-01' AND '2017-12-31' GROUP BY origin ORDER BY avg_time_to_won ASC",
     "expected_answer_english": "Average time from first contact to lead closed for each origin channel in the last quarter of 2017 is as follows:\n1. ('display', 4.083333333488554)\n2. ('organic_search', 126.53888374494596)\n3. ('social', 132.5161419752209)\n4. ('direct_traffic', 169.58270254638046)\n5. ('paid_search', 178.95013117281098)\n6. ('email', 226.7206250000745)\n7. ('unknown', 259.95948302471595)",
     "eval_type": "answer_verification",
-    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "sales_cycle_days"
+    ]
   },
   {
     "id": "016",
@@ -125,7 +185,11 @@
     "expected_sql": "SELECT count(distinct p.product_id) FROM products p LEFT JOIN order_items oi ON p.product_id = oi.product_id left JOIN orders o ON oi.order_id = o.order_id left join order_reviews r on o.order_id = r.order_id WHERE r.review_id IS NULL",
     "expected_answer_english": "725 products have zero reviews.",
     "eval_type": "answer_verification",
-    "eval_criteria": "Agent's answer should be within 1% of the expected answer."
+    "eval_criteria": "Agent's answer should be within 1% of the expected answer.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "products_without_reviews"
+    ]
   },
   {
     "id": "017",
@@ -133,7 +197,11 @@
     "expected_sql": "SELECT COUNT(*) FROM (SELECT s.seller_id FROM (SELECT s.seller_id FROM sellers s JOIN order_items oi ON s.seller_id = oi.seller_id JOIN order_reviews r ON oi.order_id = r.order_id GROUP BY s.seller_id HAVING SUM(oi.price) > (SELECT AVG(revenue) FROM (SELECT s2.seller_id, SUM(oi2.price) AS revenue FROM sellers s2 JOIN order_items oi2 ON s2.seller_id = oi2.seller_id GROUP BY s2.seller_id)) AND AVG(r.review_score) < (SELECT AVG(review_score) FROM order_reviews)))",
     "expected_answer_english": "There are 305 sellers who have above average revenue but below average review scores.",
     "eval_type": "known_failure",
-    "eval_criteria": "Correlated subquery is too complex for the 60s pipeline timeout on SQLite. Skipped from scoring."
+    "eval_criteria": "Correlated subquery is too complex for the 60s pipeline timeout on SQLite. Skipped from scoring.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "seller_scorecard"
+    ]
   },
   {
     "id": "018",
@@ -141,7 +209,11 @@
     "expected_sql": "SELECT strftime('%Y-%m', order_purchase_timestamp) AS month, COUNT(*) AS order_volume FROM orders WHERE order_status = 'delivered' AND strftime('%Y', order_purchase_timestamp) = '2017' GROUP BY month ORDER BY order_volume DESC LIMIT 1",
     "expected_answer_english": "The month with the highest order volume in 2017 was November.",
     "eval_type": "answer_verification",
-    "eval_criteria": "Agent's answer should be the same as the expected answer."
+    "eval_criteria": "Agent's answer should be the same as the expected answer.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "orders_per_month"
+    ]
   },
   {
     "id": "019",
@@ -149,7 +221,12 @@
     "expected_sql": null,
     "expected_answer_english": null,
     "eval_type": "ambiguity_handling",
-    "eval_criteria": "Agent should either ask a clarifying question about what 'best' means (highest spend, most orders, most recent purchase), OR state its interpretation explicitly before generating SQL. Failure is generating SQL silently without acknowledging ambiguity."
+    "eval_criteria": "Agent should either ask a clarifying question about what 'best' means (highest spend, most orders, most recent purchase), OR state its interpretation explicitly before generating SQL. Failure is generating SQL silently without acknowledging ambiguity.",
+    "expected_route": [
+      "clarify",
+      "analyze"
+    ],
+    "expected_skills": []
   },
   {
     "id": "020",
@@ -157,6 +234,360 @@
     "expected_sql": "SELECT s.seller_state, AVG(oi.freight_value) FROM order_items oi JOIN sellers s ON oi.seller_id = s.seller_id GROUP BY 1 ORDER BY 1",
     "expected_answer": "São Paulo sellers have lower average freight costs compared to other states due to proximity to customers.",
     "eval_type": "known_failure",
-    "eval_criteria": "SQL is expected to be correct. Explanation is expected to FAIL — agent does not correctly attribute the business reason for freight differences. Documenting as baseline to improve insights prompt."
+    "eval_criteria": "SQL is expected to be correct. Explanation is expected to FAIL — agent does not correctly attribute the business reason for freight differences. Documenting as baseline to improve insights prompt.",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "avg_freight_value_by_state"
+    ]
+  },
+  {
+    "id": "R01",
+    "question": "What was the GMV in each month of 2017?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "monthly_gmv"
+    ]
+  },
+  {
+    "id": "R02",
+    "question": "How much did customers pay in total per month?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "monthly_gmv"
+    ]
+  },
+  {
+    "id": "R03",
+    "question": "Which month had the highest gross merchandise value?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "monthly_gmv"
+    ]
+  },
+  {
+    "id": "R04",
+    "question": "What are the top 5 product categories by revenue?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "revenue_by_product_category"
+    ]
+  },
+  {
+    "id": "R05",
+    "question": "How much revenue did health and beauty bring in?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "revenue_by_product_category"
+    ]
+  },
+  {
+    "id": "R06",
+    "question": "Which sellers sold the most in November 2017?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "seller_tpv_per_month"
+    ]
+  },
+  {
+    "id": "R07",
+    "question": "Who are our top 10 sellers?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "top_10_sellers_by_revenue"
+    ]
+  },
+  {
+    "id": "R08",
+    "question": "Rank sellers by total revenue",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "top_10_sellers_by_revenue"
+    ]
+  },
+  {
+    "id": "R09",
+    "question": "How many orders did we get each month?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "orders_per_month"
+    ]
+  },
+  {
+    "id": "R10",
+    "question": "Which month in 2017 had the most orders?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "orders_per_month"
+    ]
+  },
+  {
+    "id": "R11",
+    "question": "Which Brazilian states generate the most sales?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "sales_by_customer_state"
+    ]
+  },
+  {
+    "id": "R12",
+    "question": "Total sales for customers in Rio de Janeiro (RJ)",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "sales_by_customer_state"
+    ]
+  },
+  {
+    "id": "R13",
+    "question": "What percentage of payments are made by credit card?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "payment_type_breakdown"
+    ]
+  },
+  {
+    "id": "R14",
+    "question": "How popular is boleto compared to other payment methods?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "payment_type_breakdown"
+    ]
+  },
+  {
+    "id": "R15",
+    "question": "How many installments do customers typically choose?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "avg_installments_by_payment_type"
+    ]
+  },
+  {
+    "id": "R16",
+    "question": "How many customers placed more than one order?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "customer_order_count"
+    ]
+  },
+  {
+    "id": "R17",
+    "question": "What is the average review score?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "average_review_score_per_order"
+    ]
+  },
+  {
+    "id": "R18",
+    "question": "How did the average review score trend month over month?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "monthly_average_review_score"
+    ]
+  },
+  {
+    "id": "R19",
+    "question": "How many reviews include a written comment?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "reviews_with_comments"
+    ]
+  },
+  {
+    "id": "R20",
+    "question": "How late are deliveries compared with the estimated date?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "delivery_delay_vs_estimate"
+    ]
+  },
+  {
+    "id": "R21",
+    "question": "How many orders arrived after the estimated delivery date?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "delivery_delay_vs_estimate"
+    ]
+  },
+  {
+    "id": "R22",
+    "question": "Which categories have the highest freight cost relative to price?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "freight_to_price_ratio_by_category"
+    ]
+  },
+  {
+    "id": "R23",
+    "question": "How many qualified leads turned into closed deals?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "lead_conversion_count"
+    ]
+  },
+  {
+    "id": "R24",
+    "question": "Which lead origin channel converts best?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "conversion_rate_by_origin"
+    ]
+  },
+  {
+    "id": "R25",
+    "question": "Conversion rate for organic search leads",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "conversion_rate_by_origin"
+    ]
+  },
+  {
+    "id": "R26",
+    "question": "How many leads came from orders placed by customers in SP between July and August 2017?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "leads_generated_from_orders_by_period_and_state"
+    ]
+  },
+  {
+    "id": "R27",
+    "question": "Which sellers with orders in 2017 are in the closed leads pipeline?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "seller_order_volume_with_lead_status"
+    ]
+  },
+  {
+    "id": "R28",
+    "question": "Which states have the highest lead conversion rates?",
+    "eval_type": "routing_only",
+    "expected_route": "analyze",
+    "expected_skills": [
+      "lead_conversion_rate_by_customer_state"
+    ]
+  },
+  {
+    "id": "R29",
+    "question": "Show me the executive dashboard",
+    "eval_type": "routing_only",
+    "expected_route": "redirect",
+    "expected_skills": [
+      "executive_overview"
+    ]
+  },
+  {
+    "id": "R30",
+    "question": "How is the business doing overall?",
+    "eval_type": "routing_only",
+    "expected_route": "redirect",
+    "expected_skills": [
+      "executive_overview"
+    ]
+  },
+  {
+    "id": "R31",
+    "question": "I need a monthly business review",
+    "eval_type": "routing_only",
+    "expected_route": "redirect",
+    "expected_skills": [
+      "executive_overview"
+    ]
+  },
+  {
+    "id": "R32",
+    "question": "Where can I see all the key KPIs together?",
+    "eval_type": "routing_only",
+    "expected_route": "redirect",
+    "expected_skills": [
+      "executive_overview"
+    ]
+  },
+  {
+    "id": "R33",
+    "question": "What is our gross margin?",
+    "eval_type": "routing_only",
+    "expected_route": "not_computable",
+    "expected_skills": [
+      "gross_margin"
+    ]
+  },
+  {
+    "id": "R34",
+    "question": "Which products are the most profitable?",
+    "eval_type": "routing_only",
+    "expected_route": "not_computable",
+    "expected_skills": [
+      "gross_margin"
+    ]
+  },
+  {
+    "id": "R35",
+    "question": "What is the profit per order?",
+    "eval_type": "routing_only",
+    "expected_route": "not_computable",
+    "expected_skills": [
+      "gross_margin"
+    ]
+  },
+  {
+    "id": "R36",
+    "question": "What is the weather in Sao Paulo today?",
+    "eval_type": "routing_only",
+    "expected_route": "out_of_scope",
+    "expected_skills": []
+  },
+  {
+    "id": "R37",
+    "question": "Write me a poem about marketplaces",
+    "eval_type": "routing_only",
+    "expected_route": "out_of_scope",
+    "expected_skills": []
+  },
+  {
+    "id": "R38",
+    "question": "hello",
+    "eval_type": "routing_only",
+    "expected_route": "out_of_scope",
+    "expected_skills": []
+  },
+  {
+    "id": "R39",
+    "question": "numbers",
+    "eval_type": "routing_only",
+    "expected_route": "clarify",
+    "expected_skills": []
+  },
+  {
+    "id": "R40",
+    "question": "tell me about sales",
+    "eval_type": "routing_only",
+    "expected_route": "clarify",
+    "expected_skills": []
   }
 ]
