@@ -8,6 +8,7 @@
 **/tests/
 **/*.md
 !AI Agent/olist_schema_queries.md
+!AI Agent/skills/**/*.md
 **/query_log.jsonl
 **/feedback_log.jsonl
 **/olist.sqlite

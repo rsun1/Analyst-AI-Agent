@@ -69,8 +69,56 @@ def _in_range(month: str, date_from: str | None, date_to: str | None) -> bool:
     return True
 
 
+_CATEGORY_BY_MONTH_SQL = """SELECT TO_CHAR(o.order_purchase_timestamp, 'YYYY-MM') AS month,
+  COALESCE(pct.product_category_name_english, 'unknown') AS segment, SUM(oi.price) AS value
+FROM orders o
+JOIN order_items oi ON oi.order_id = o.order_id
+JOIN products p ON p.product_id = oi.product_id
+LEFT JOIN product_category_name_translation pct ON pct.product_category_name = p.product_category_name
+GROUP BY month, segment"""
+
+_PAYMENT_BY_MONTH_SQL = """SELECT TO_CHAR(o.order_purchase_timestamp, 'YYYY-MM') AS month,
+  op.payment_type AS segment, SUM(op.payment_value) AS value
+FROM orders o
+JOIN order_payments op ON op.order_id = o.order_id
+GROUP BY month, segment"""
+
+_DELIVERY_BY_MONTH_SQL = """SELECT TO_CHAR(order_purchase_timestamp, 'YYYY-MM') AS month,
+  CASE WHEN order_delivered_customer_date > order_estimated_delivery_date THEN 'late' ELSE 'on_time' END AS segment,
+  COUNT(*) AS value
+FROM orders
+WHERE order_delivered_customer_date IS NOT NULL AND order_estimated_delivery_date IS NOT NULL
+GROUP BY month, segment"""
+
+
+def top_n_with_other(rows: list[dict], n: int = 6, other: str = "other") -> list[dict]:
+    """Keep the n segments with the largest total; fold the rest into one 'other' segment per month."""
+    totals: dict[str, float] = {}
+    for r in rows:
+        totals[r["segment"]] = totals.get(r["segment"], 0.0) + r["value"]
+    keep = {k for k, _ in sorted(totals.items(), key=lambda kv: -kv[1])[:n]}
+    folded: dict[tuple[str, str], float] = {}
+    for r in rows:
+        seg = r["segment"] if r["segment"] in keep else other
+        key = (r["month"], seg)
+        folded[key] = folded.get(key, 0.0) + r["value"]
+    return [{"month": m, "segment": sg, "value": v} for (m, sg), v in sorted(folded.items())]
+
+
+def _segment_rows(sql: str, lo: str | None, hi: str | None) -> list[dict]:
+    from db import execute_query
+
+    cols, rows = execute_query(sql)
+    mi, si, vi = cols.index("month"), cols.index("segment"), cols.index("value")
+    return [{"month": r[mi], "segment": str(r[si]), "value": float(r[vi] or 0)}
+            for r in rows if r[mi] and _in_range(r[mi], lo, hi)]
+
+
 def overview_data(params: dict[str, str]) -> dict:
-    """Monthly KPIs for the executive overview: GMV, orders, AOV, review score, late share."""
+    """
+    Executive overview: monthly KPIs plus segmentations (product category, payment type,
+    delivery performance), all from the same SQL the metric skills use.
+    """
     from db import execute_query
 
     lo, hi = params.get("date_from"), params.get("date_to")
@@ -88,10 +136,19 @@ def overview_data(params: dict[str, str]) -> dict:
     add(_skill_sql("orders_per_month"), "order_count", "order_month", "orders")
     add(_skill_sql("monthly_average_review_score"), "avg_score", "review_month", "avg_review_score")
     add(_LATE_BY_MONTH_SQL, "late_pct", "month", "late_pct")
-    months = [series[m] for m in sorted(series)]
+    # Reviews are dated by review creation, so a few months have reviews but no orders: keep order months only.
+    months = [series[m] for m in sorted(series) if "gmv" in series[m] and "orders" in series[m]]
     for row in months:
         row["aov"] = round(row["gmv"] / row["orders"], 2) if row.get("gmv") and row.get("orders") else None
-    return {"title": "Executive overview", "months": months}
+    return {
+        "title": "Executive overview",
+        "months": months,
+        "segments": {
+            "category": top_n_with_other(_segment_rows(_CATEGORY_BY_MONTH_SQL, lo, hi), n=6),
+            "payment": top_n_with_other(_segment_rows(_PAYMENT_BY_MONTH_SQL, lo, hi), n=4),
+            "delivery": _segment_rows(_DELIVERY_BY_MONTH_SQL, lo, hi),
+        },
+    }
 
 
 BUILDERS = {"executive_overview": overview_data}

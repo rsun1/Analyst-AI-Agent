@@ -190,50 +190,39 @@ if st.session_state["_live_schema_tables"] is None:
         st.session_state["_schema_warnings"] = []
 
 
-# ── Dashboard pages (deep links from the assistant: ?page=<name>&date_from=...) ──
+# ── Dashboard page (deep links from the assistant: ?page=<name>&date_from=...) ──
 
-def _render_dashboard(name: str) -> None:
-    import pandas as pd
+from dashboard_page import render_dashboard  # noqa: E402
 
-    params = {k: st.query_params.get(k) for k in ("state", "date_from", "date_to")}
-    try:
-        data = api_client.dashboard(name, {k: v for k, v in params.items() if v})
-    except api_client.ApiError as exc:
-        st.error(f"Could not load the dashboard: {exc}")
-        st.markdown("[Back to the assistant](./)")
-        return
-    st.title(data.get("title", name))
-    st.markdown("[← Back to the assistant](./)")
-    months = data.get("months", [])
-    if not months:
-        st.info("No data for the selected period.")
-        return
-    df = pd.DataFrame(months).set_index("month")
-    last = df.iloc[-1]
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("GMV (last month)", f"{last.get('gmv', 0):,.0f}")
-    c2.metric("Orders", f"{last.get('orders', 0):,.0f}")
-    c3.metric("Avg order value", f"{last.get('aov', 0):,.2f}")
-    c4.metric("Avg review score", f"{last.get('avg_review_score', 0):.2f}")
-    c5.metric("Late deliveries", f"{last.get('late_pct', 0):.1f}%")
-    st.caption(f"Latest month shown: {df.index[-1]}. Same metric definitions the assistant uses.")
-    for col, label in [("gmv", "GMV by month"), ("orders", "Orders by month"), ("aov", "Average order value"),
-                       ("avg_review_score", "Average review score"), ("late_pct", "Late deliveries (%)")]:
-        if col in df:
-            st.subheader(label)
-            st.line_chart(df[col])
+DASHBOARD_PAGE = "executive_overview"
 
 
-_page = st.query_params.get("page")
-if _page:
-    _render_dashboard(_page)
-    st.stop()
+def _go_dashboard() -> None:
+    st.query_params.clear()
+    st.query_params["page"] = DASHBOARD_PAGE
+
+
+def _go_assistant() -> None:
+    st.query_params.clear()
 
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 
+_page = st.query_params.get("page")
+
 with st.sidebar:
     st.title("🔍 Olist Data Analyst AI")
+    if _page:
+        st.button("💬 Back to the assistant", on_click=_go_assistant, use_container_width=True, type="primary")
+    else:
+        st.button("📊 Executive dashboard", on_click=_go_dashboard, use_container_width=True, type="primary",
+                  help="Charts of GMV, orders, delivery and reviews with a date filter")
+
+if _page:
+    render_dashboard(_page)
+    st.stop()
+
+with st.sidebar:
     st.markdown(
         "A Data Analyst AI Agent connected to the **Olist Brazilian 2017-2018 e-commerce database** — "
         "covering orders, customers, sellers, products, payments, and reviews.\n\n"
