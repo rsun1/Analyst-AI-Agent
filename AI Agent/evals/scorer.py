@@ -14,9 +14,11 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
-def load_test_dataset(path="evals/test_dataset.json"):
+def load_test_dataset(path="evals/test_dataset.json", include_routing_only=False):
+    """Records with eval_type 'routing_only' have no expected answer: only router_eval.py uses them."""
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        data = json.load(f)
+    return data if include_routing_only else [r for r in data if r.get("eval_type") != "routing_only"]
 
 
 def _is_empty_result(rows: list) -> bool:

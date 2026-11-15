@@ -289,3 +289,36 @@ def test_every_skill_sql_passes_the_gate():
     with conn:
         failures = {s.name: f for s in load_skills() if (f := check_skill(conn, s))}
     assert not failures, failures
+
+
+# -- unified eval dataset ---------------------------------------------------------
+
+def _dataset():
+    import pathlib
+    p = pathlib.Path(__file__).resolve().parent.parent / "evals" / "test_dataset.json"
+    return json.loads(p.read_text(encoding="utf-8"))
+
+
+def test_eval_dataset_records_are_consistent():
+    data = _dataset()
+    ids = [r["id"] for r in data]
+    assert len(ids) == len(set(ids)), "duplicate ids"
+    valid = set(router.ROUTES)
+    for r in data:
+        routes = r["expected_route"] if isinstance(r["expected_route"], list) else [r["expected_route"]]
+        assert routes and set(routes) <= valid, r["id"]
+        assert isinstance(r["expected_skills"], list), r["id"]
+        if r["eval_type"] == "routing_only":
+            assert "expected_answer_english" not in r and "expected_sql" not in r, r["id"]
+        elif r["eval_type"] == "answer_verification":
+            assert r.get("expected_answer_english") or r.get("expected_answer"), r["id"]
+        elif r["eval_type"] == "ambiguity_handling":
+            assert r.get("eval_criteria"), r["id"]
+
+
+def test_scorer_skips_routing_only_records():
+    from evals import scorer  # noqa: F401  (import check)
+    import evals.scorer as sc
+    kept = sc.load_test_dataset(str(__import__("pathlib").Path(__file__).resolve().parent.parent / "evals" / "test_dataset.json"))
+    assert kept and all(r["eval_type"] != "routing_only" for r in kept)
+    assert len(kept) == 20

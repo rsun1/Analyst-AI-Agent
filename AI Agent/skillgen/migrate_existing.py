@@ -129,7 +129,7 @@ SKILLS: dict[str, dict] = {
         domain="orders", title="Orders per month", src=["orders_per_month"],
         description="Number of orders placed per calendar month, by order purchase timestamp.",
         triggers=["How many orders per month?", "Monthly order volume", "Which month had the most orders in 2017?"],
-        disambiguation="Counts all statuses. Filter order_status = 'delivered' for completed orders only.",
+        disambiguation="Orders over time, all statuses included. Not for how many orders have a given status (delivered, canceled, shipped...): use orders_by_status.",
         tables=["orders"], grain="month", dimensions=["month", "order_status"],
         eval=["Which month in 2017 had the highest order volume?", "How many orders were placed in January 2018?"],
         pitfalls=["Use half-open timestamp ranges (>= start AND < next period start); BETWEEN misses the last day's afternoon.",
