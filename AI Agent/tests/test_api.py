@@ -93,7 +93,9 @@ def test_ask_returns_proposal(monkeypatch):
         {"role": "user", "content": "earlier"},
         {"role": "assistant", "content": "answer", "sql": "SELECT 2"},
     ]}, headers=H)
-    assert r.status_code == 200 and r.json() == {"sql": "SELECT 1", "explanation": "because"}
+    body = r.json()
+    assert r.status_code == 200
+    assert (body["sql"], body["explanation"], body["route"]) == ("SELECT 1", "because", "analyze")
     assert seen["hist"][1] == {"role": "assistant", "content": "answer", "sql": "SELECT 2"}
 
 

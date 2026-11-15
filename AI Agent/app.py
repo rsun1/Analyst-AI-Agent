@@ -190,6 +190,46 @@ if st.session_state["_live_schema_tables"] is None:
         st.session_state["_schema_warnings"] = []
 
 
+# ── Dashboard pages (deep links from the assistant: ?page=<name>&date_from=...) ──
+
+def _render_dashboard(name: str) -> None:
+    import pandas as pd
+
+    params = {k: st.query_params.get(k) for k in ("state", "date_from", "date_to")}
+    try:
+        data = api_client.dashboard(name, {k: v for k, v in params.items() if v})
+    except api_client.ApiError as exc:
+        st.error(f"Could not load the dashboard: {exc}")
+        st.markdown("[Back to the assistant](./)")
+        return
+    st.title(data.get("title", name))
+    st.markdown("[← Back to the assistant](./)")
+    months = data.get("months", [])
+    if not months:
+        st.info("No data for the selected period.")
+        return
+    df = pd.DataFrame(months).set_index("month")
+    last = df.iloc[-1]
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("GMV (last month)", f"{last.get('gmv', 0):,.0f}")
+    c2.metric("Orders", f"{last.get('orders', 0):,.0f}")
+    c3.metric("Avg order value", f"{last.get('aov', 0):,.2f}")
+    c4.metric("Avg review score", f"{last.get('avg_review_score', 0):.2f}")
+    c5.metric("Late deliveries", f"{last.get('late_pct', 0):.1f}%")
+    st.caption(f"Latest month shown: {df.index[-1]}. Same metric definitions the assistant uses.")
+    for col, label in [("gmv", "GMV by month"), ("orders", "Orders by month"), ("aov", "Average order value"),
+                       ("avg_review_score", "Average review score"), ("late_pct", "Late deliveries (%)")]:
+        if col in df:
+            st.subheader(label)
+            st.line_chart(df[col])
+
+
+_page = st.query_params.get("page")
+if _page:
+    _render_dashboard(_page)
+    st.stop()
+
+
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 
 with st.sidebar:
@@ -287,6 +327,13 @@ def render_event(event: dict) -> None:
     elif t == "insights":
         with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
             st.markdown(event["content"])
+
+    elif t == "route_message":
+        icon = {"redirect": "📊", "not_computable": "🚫", "clarify": "❓", "out_of_scope": "ℹ️"}.get(event["route"], "ℹ️")
+        with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
+            st.markdown(f"{icon} {event['content']}")
+            if event.get("url"):
+                st.link_button("Open the dashboard", event["url"])
 
     elif t == "user_edit":
         with st.chat_message("user", avatar=USER_AVATAR):
@@ -620,6 +667,15 @@ if _flow()["state"] == "GENERATING":
             _append({"type": "error", "content": f"Could not generate SQL: {exc}"})
             _set_flow(state="IDLE")
             st.rerun()
+
+    route = proposal.get("route", "analyze")
+    if route != "analyze" or not proposal.get("sql"):
+        # Redirect / not computable / clarify / out of scope: nothing to approve or run.
+        text = proposal.get("message") or "I could not find a way to answer that."
+        _append({"type": "route_message", "route": route, "content": text, "url": proposal.get("dashboard_url")})
+        append_assistant_turn(st.session_state["conv_history"], sql="", summary=text)
+        _set_flow(state="IDLE")
+        st.rerun()
 
     sql, explanation = proposal["sql"], proposal["explanation"]
     _append({"type": "proposed_sql", "reason": explanation, "sql": sql})

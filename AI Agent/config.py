@@ -86,3 +86,14 @@ API_MAX_RESPONSE_ROWS = int(os.getenv("API_MAX_RESPONSE_ROWS", "1000"))
 
 # Streamlit front end -> API (api_client.py). The UI talks to the API over HTTP only.
 API_URL = os.getenv("API_URL", "http://localhost:8000").rstrip("/")
+
+# ── Skills + orchestrator ─────────────────────────────────────────────────────
+# When on, /ask routes the question to metric skills (skills/*.md) instead of
+# retrieving untyped schema_chunks. Off keeps the original behaviour.
+USE_SKILLS = os.getenv("USE_SKILLS", "0").lower() in ("1", "true", "yes")
+ROUTER_MODEL = os.getenv("ROUTER_MODEL") or CHAT_MODEL
+ROUTER_CANDIDATES = int(os.getenv("ROUTER_CANDIDATES", "8"))
+# Base URL of the Streamlit UI, used to build dashboard deep links.
+UI_BASE_URL = os.getenv("UI_BASE_URL", "http://localhost:8501").rstrip("/")
+# prod refuses placeholder dashboard links at startup.
+ENV = os.getenv("ENV", "dev")

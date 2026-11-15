@@ -96,8 +96,21 @@ def run_agent(question: str) -> tuple[str, str]:
     from agent_core import step_explain, step_execute, step_generate, step_rag
 
     try:
-        print("    • retrieving RAG context...", flush=True)
-        rag_context = step_rag(question)
+        from config import USE_SKILLS
+        if USE_SKILLS:
+            import agent_core
+            print("    • routing...", flush=True)
+            decision = agent_core.step_route(question)
+            print(f"    • route={decision.route} skills={decision.skills}", flush=True)
+            if decision.route != "analyze":
+                # No SQL is produced for these routes; the judge scores the message the user would see.
+                skill = agent_core.get_skill(decision.skills[0]) if decision.skills else None
+                text = decision.message or (skill.meta.description if skill else "")
+                return "", f"[ROUTE {decision.route}] {text}"
+            rag_context = agent_core.step_skill_context(decision.skills) or step_rag(question)
+        else:
+            print("    • retrieving RAG context...", flush=True)
+            rag_context = step_rag(question)
         print("    • generating SQL...", flush=True)
         sql, _ = step_generate(question, rag_context)
         if not sql:

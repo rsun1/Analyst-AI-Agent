@@ -83,3 +83,10 @@ def schema_status() -> dict:
 
 def feedback(question: str, sql: str, rating: str, comment: str | None = None) -> None:
     _call("POST", "/feedback", json={"question": question, "sql": sql, "rating": rating, "comment": comment})
+
+
+def dashboard(name: str, params: dict[str, str]) -> dict:
+    """Data for a dashboard page; params are already limited to the allowlist by the API."""
+    from urllib.parse import urlencode
+    qs = urlencode({k: v for k, v in params.items() if v})
+    return _call("GET", f"/dashboards/{name}" + (f"?{qs}" if qs else ""))
