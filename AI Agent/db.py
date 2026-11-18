@@ -10,7 +10,7 @@ import threading
 import psycopg
 from psycopg_pool import ConnectionPool
 
-from config import DB_POOL_MAX, DB_POOL_MIN, PG_LOGGER_DSN, PG_READER_DSN
+from config import DB_POOL_MAX, DB_POOL_MIN, PG_LOGGER_DSN, PG_READER_DSN, PG_WORKFLOW_DSN
 
 STATEMENT_TIMEOUT_MS = 15_000
 MAX_ROWS = 50_000
@@ -38,6 +38,15 @@ def _get_pool(name: str = "reader") -> ConnectionPool:
                     max_size=DB_POOL_MAX,
                     kwargs={"options": _CONN_OPTIONS},
                     check=ConnectionPool.check_connection,  # drop dead connections (e.g. after a DB restart)
+                    open=True,
+                )
+            elif name == "workflow":  # read/write on the `workflow` schema only
+                _pools[name] = ConnectionPool(
+                    PG_WORKFLOW_DSN,
+                    min_size=0,
+                    max_size=5,
+                    kwargs={"options": "-c statement_timeout=10000"},
+                    check=ConnectionPool.check_connection,
                     open=True,
                 )
             else:  # "logger": small pool, INSERT-only role, short timeout, not read-only
@@ -73,6 +82,15 @@ def get_connection(dsn: str | None = None):
 def get_log_connection():
     """Pooled connection for writing log events (INSERT-only role)."""
     return _get_pool("logger").connection()
+
+
+def get_workflow_connection():
+    """
+    Pooled read/write connection for the workflow schema. Use as a context manager:
+    the transaction COMMITS when the block exits normally and ROLLS BACK if it raises,
+    which is what makes store.transition() atomic.
+    """
+    return _get_pool("workflow").connection()
 
 
 def get_live_schema(dsn: str | None = None) -> dict[str, list[dict]]:

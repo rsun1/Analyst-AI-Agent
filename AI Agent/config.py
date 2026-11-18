@@ -43,6 +43,14 @@ PG_LOGGER_DSN = os.getenv("PG_LOGGER_DSN") or (
     f"postgresql://{PG_LOGGER_USER}:{PG_LOGGER_PASSWORD}@{PG_HOST}:{PG_PORT}/{PG_DB}"
 )
 
+# Workflow role: read/write on the `workflow` schema only (disputes, approvals, refunds,
+# append-only audit log). Cannot touch the Olist tables or app_logs.
+PG_WORKFLOW_USER = os.getenv("PG_WORKFLOW_USER", "olist_workflow")
+PG_WORKFLOW_PASSWORD = os.getenv("PG_WORKFLOW_PASSWORD", "olist_workflow_pw")
+PG_WORKFLOW_DSN = os.getenv("PG_WORKFLOW_DSN") or (
+    f"postgresql://{PG_WORKFLOW_USER}:{PG_WORKFLOW_PASSWORD}@{PG_HOST}:{PG_PORT}/{PG_DB}"
+)
+
 # Connection pool for the reader role (db.py). Keep max_size x (API processes) below the
 # database's connection limit.
 DB_POOL_MIN = int(os.getenv("DB_POOL_MIN", "1"))
