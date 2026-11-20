@@ -97,7 +97,9 @@ audit_log(                                          -- append-only
 | 1 | R01_ORDER_NOT_FOUND | 订单不存在 | reject（或直接 400，不入库——你来定） |
 | 2 | R02_DUPLICATE_OPEN | 该订单已有未终结的争议 | reject |
 | 3 | R03_NOT_REFUNDABLE_STATUS | 订单状态为 canceled / unavailable（没有扣款可退） | reject |
-| 4 | R04_AMOUNT_EXCEEDS_PAID | 申请金额 > 实付总额 | reject（或 needs_review，你来定） |
+| 3b | R03B_NOT_DELIVERED | 订单尚未送达（shipped/processing 等） | needs_review，`policy`（实现时新增） |
+| 4 | R04_AMOUNT_NOT_COVERED | 无支付记录，或申请金额 > 实付总额 | reject（已定） |
+| 5b | R05B_MISSING_DELIVERY_DATE | 已送达但没有送达日期，算不出窗口 | needs_review，`agent_uncertain`（实现时新增） |
 | 5 | R05_OUTSIDE_WINDOW | 已送达且 `as_of` − 送达日 > 30 天 | reject |
 | 6 | R06_CONTRADICTION | 理由与事实矛盾（如声称"没收到"但已送达且客户给了 5 星；声称"延迟"但实际提前送达） | needs_review，`agent_uncertain` |
 | 7 | R07_HIGH_VALUE | 金额 ≥ 阈值（暂定 P95） | needs_review，`policy` |

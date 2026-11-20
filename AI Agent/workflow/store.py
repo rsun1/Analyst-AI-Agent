@@ -18,7 +18,7 @@ from psycopg import Connection
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from workflow.states import InvalidTransition, Status, assert_transition
+from workflow.states import TERMINAL_STATES, InvalidTransition, Status, assert_transition
 
 
 class DisputeNotFound(Exception):
@@ -112,6 +112,29 @@ def get_dispute(conn: Connection, dispute_id: int) -> dict:
     if row is None:
         raise DisputeNotFound(dispute_id)
     return row
+
+
+def dispute_history(
+    conn: Connection, order_id: str, customer_ids: list[str], exclude_dispute_id: int | None = None
+) -> tuple[bool, int]:
+    """
+    (has_open_dispute_on_order, executed_refunds_in_last_90_days_for_these_customer_ids).
+    Pass `exclude_dispute_id` when the dispute being evaluated already exists, so it
+    does not count against itself. The 90 days run on the real clock: this is our own
+    table, only the Olist order timeline uses the injectable `as_of`.
+    """
+    terminal = [s.value for s in TERMINAL_STATES]
+    has_open = conn.execute(
+        "SELECT EXISTS (SELECT 1 FROM workflow.disputes WHERE order_id = %s "
+        "AND NOT (status = ANY(%s)) AND id IS DISTINCT FROM %s::bigint)",
+        (order_id, terminal, exclude_dispute_id),
+    ).fetchone()[0]
+    refunds = conn.execute(
+        "SELECT count(*) FROM workflow.disputes WHERE customer_id = ANY(%s) AND status = %s "
+        "AND updated_at >= now() - interval '90 days' AND id IS DISTINCT FROM %s::bigint",
+        (customer_ids, Status.REFUND_EXECUTED.value, exclude_dispute_id),
+    ).fetchone()[0]
+    return has_open, refunds
 
 
 def list_audit(conn: Connection, dispute_id: int) -> list[dict]:
