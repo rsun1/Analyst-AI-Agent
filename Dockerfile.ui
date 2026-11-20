@@ -10,7 +10,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Only the modules the UI imports (app -> api_client, chart, conversation -> config).
-COPY ["AI Agent/app.py", "AI Agent/api_client.py", "AI Agent/chart.py", "AI Agent/conversation.py", "AI Agent/config.py", "AI Agent/dashboard_page.py", "./"]
+COPY ["AI Agent/app.py", "AI Agent/api_client.py", "AI Agent/chart.py", "AI Agent/conversation.py", "AI Agent/config.py", "AI Agent/dashboard_page.py", "AI Agent/disputes_page.py", "./"]
 
 RUN useradd --create-home appuser && chown -R appuser /app
 USER appuser

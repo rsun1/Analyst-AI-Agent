@@ -19,11 +19,11 @@ class ApiError(Exception):
         self.status = status
 
 
-def _call(method: str, path: str, *, json=None, timeout: int = _TIMEOUT):
+def _call(method: str, path: str, *, json=None, timeout: int = _TIMEOUT, headers: dict | None = None):
     try:
         r = requests.request(
             method, f"{API_URL}{path}", json=json, timeout=timeout,
-            headers={"X-API-Key": API_KEY or ""},
+            headers={"X-API-Key": API_KEY or "", **(headers or {})},
         )
     except requests.RequestException as e:
         raise ApiError(f"Could not reach the API at {API_URL}: {e}") from e
@@ -83,6 +83,40 @@ def schema_status() -> dict:
 
 def feedback(question: str, sql: str, rating: str, comment: str | None = None) -> None:
     _call("POST", "/feedback", json={"question": question, "sql": sql, "rating": rating, "comment": comment})
+
+
+# ── Dispute workflow (workflow/api.py) ─────────────────────────────────────────
+
+def submit_dispute(order_id: str, amount: str, reason_text: str, as_of: str | None = None) -> dict:
+    body = {"order_id": order_id, "amount": amount, "reason_text": reason_text}
+    if as_of:
+        body["as_of"] = as_of
+    return _call("POST", "/disputes", json=body)
+
+
+def get_dispute(dispute_id: int) -> dict:
+    return _call("GET", f"/disputes/{dispute_id}")
+
+
+def dispute_replay(dispute_id: int) -> dict:
+    return _call("GET", f"/disputes/{dispute_id}/replay")
+
+
+def dispute_audit(dispute_id: int) -> list[dict]:
+    return _call("GET", f"/disputes/{dispute_id}/audit")
+
+
+def retry_refund(dispute_id: int) -> dict:
+    return _call("POST", f"/disputes/{dispute_id}/retry-refund")
+
+
+def pending_approvals() -> list[dict]:
+    return _call("GET", "/approvals?status=pending")
+
+
+def decide_approval(approval_id: int, decision: str, reviewer: str, comment: str | None = None) -> dict:
+    return _call("POST", f"/approvals/{approval_id}/decision",
+                 json={"decision": decision, "comment": comment or None}, headers={"X-Reviewer": reviewer})
 
 
 def dashboard(name: str, params: dict[str, str]) -> dict:
