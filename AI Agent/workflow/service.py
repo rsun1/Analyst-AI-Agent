@@ -26,6 +26,7 @@ from psycopg import Connection
 
 from db import get_workflow_connection
 from workflow.facts import load_facts
+from workflow.llm_assist import default_assist, safe_brief, safe_classify, safe_second_opinion, tighten
 from workflow.models import Claim, Decision, Outcome, ReasonCategory, ReviewType
 from workflow.payments_mock import PaymentResult, default_gateway
 from workflow.rules import evaluate
@@ -81,11 +82,15 @@ def _validate(amount, reason_text: str) -> Decimal:
 def submit_dispute(
     *, order_id: str, amount, reason_text: str,
     reason_category: ReasonCategory = ReasonCategory.OTHER,
-    as_of: datetime | None = None, submitted_by: str = "customer", gateway=None,
+    as_of: datetime | None = None, submitted_by: str = "customer", gateway=None, assist=None,
 ) -> SubmitResult:
     gateway = gateway or default_gateway()
+    assist = assist or default_assist()
     amount = _validate(amount, reason_text)
     as_of = as_of or datetime.now()
+    if reason_category is ReasonCategory.OTHER:
+        # Before the transaction, so no lock is held while waiting for the model.
+        reason_category = safe_classify(assist, reason_text)
 
     with get_workflow_connection() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (order_id,))
@@ -94,12 +99,19 @@ def submit_dispute(
             raise OrderNotFound(order_id)
 
         claim = Claim(order_id, amount, as_of, reason_category, reason_text)
-        decision = evaluate(facts, claim)
+        rule_decision = decision = evaluate(facts, claim)
+        opinion = None
+        if decision.outcome is Outcome.AUTO_APPROVE:
+            # The model may only escalate an approval to a human, never the reverse.
+            opinion = safe_second_opinion(assist, facts, claim, decision)
+            decision = tighten(decision, opinion)
         dispute_id = create_dispute(
             conn, order_id=order_id, customer_id=facts.customer_id, reason_text=reason_text,
             amount_requested=amount, actor_id=submitted_by, reason_category=reason_category.value,
         )
         evidence = {"decision": {"outcome": decision.outcome.value, "rule_id": decision.rule_id},
+                    "rules_decision": {"outcome": rule_decision.outcome.value, "rule_id": rule_decision.rule_id},
+                    "llm_second_opinion": dataclasses.asdict(opinion) if opinion else None,
                     "facts": _jsonable(facts), "claim": _jsonable(claim)}
 
         if decision.outcome is Outcome.REJECT:
@@ -113,12 +125,29 @@ def submit_dispute(
                        rule_id=decision.rule_id, details=evidence,
                        review_reason_type=decision.review_reason_type.value)
             approval_id = create_approval(conn, dispute_id)
-            return SubmitResult(dispute_id, Status.PENDING_REVIEW, decision, approval_id)
+            result = SubmitResult(dispute_id, Status.PENDING_REVIEW, decision, approval_id)
+        else:
+            transition(conn, dispute_id, Status.AUTO_APPROVED, action="policy_auto_approved", actor_type="agent",
+                       actor_id=AGENT_ID, reasoning=decision.reasoning, rule_id=decision.rule_id, details=evidence)
+            status = _execute_refund(conn, dispute_id, gateway)
+            return SubmitResult(dispute_id, status, decision)
 
-        transition(conn, dispute_id, Status.AUTO_APPROVED, action="policy_auto_approved", actor_type="agent",
-                   actor_id=AGENT_ID, reasoning=decision.reasoning, rule_id=decision.rule_id, details=evidence)
-        status = _execute_refund(conn, dispute_id, gateway)
-        return SubmitResult(dispute_id, status, decision)
+    # Committed. A brief for the reviewer is a nice-to-have, written after the commit.
+    _add_reviewer_brief(assist, result.dispute_id, facts, claim, decision)
+    return result
+
+
+def _add_reviewer_brief(assist, dispute_id: int, facts, claim, decision) -> None:
+    brief = safe_brief(assist, facts, claim, decision)
+    if not brief:
+        return
+    try:
+        with get_workflow_connection() as conn:
+            if lock_dispute(conn, dispute_id)["status"] == Status.PENDING_REVIEW.value:
+                record_event(conn, dispute_id, action="reviewer_brief_added", actor_type="agent",
+                             actor_id="llm-assist", reasoning=brief)
+    except Exception:
+        pass  # the dispute is already safely queued; the brief is optional
 
 
 def decide(*, approval_id: int, decision: str, reviewer: str, comment: str | None = None,

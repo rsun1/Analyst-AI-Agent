@@ -51,6 +51,11 @@ PG_WORKFLOW_DSN = os.getenv("PG_WORKFLOW_DSN") or (
     f"postgresql://{PG_WORKFLOW_USER}:{PG_WORKFLOW_PASSWORD}@{PG_HOST}:{PG_PORT}/{PG_DB}"
 )
 
+# Dispute workflow: optional LLM help (classify the reason, second opinion that can only
+# escalate, brief for the reviewer). Off by default; the policy rules work without it.
+USE_LLM_ASSIST = os.getenv("USE_LLM_ASSIST", "0").lower() in ("1", "true", "yes")
+LLM_ASSIST_TIMEOUT_S = float(os.getenv("LLM_ASSIST_TIMEOUT_S", "8"))
+
 # Connection pool for the reader role (db.py). Keep max_size x (API processes) below the
 # database's connection limit.
 DB_POOL_MIN = int(os.getenv("DB_POOL_MIN", "1"))
