@@ -71,7 +71,11 @@ def rule_not_delivered(f: OrderFacts, c: Claim) -> Decision | None:
 def rule_amount_not_covered(f: OrderFacts, c: Claim) -> Decision | None:
     if f.paid_total is None or f.paid_total <= 0:
         return _reject(R04, "No payment is recorded for this order, so there is nothing to refund.")
-    if c.amount > f.paid_total:
+    remaining = f.paid_total - f.refunded_total
+    if c.amount > remaining:
+        if f.refunded_total > 0:
+            return _reject(R04, f"Requested {c.amount} but only {remaining} of the {f.paid_total} paid is "
+                                f"still refundable ({f.refunded_total} already refunded).")
         return _reject(R04, f"Requested {c.amount} exceeds the amount paid ({f.paid_total}).")
 
 

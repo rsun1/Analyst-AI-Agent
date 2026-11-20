@@ -38,6 +38,7 @@ class OrderFacts:
     customer_unique_id: str = ""
     has_open_dispute: bool = False           # another unfinished dispute on this order
     refunds_last_90d: int = 0                # executed refunds for this person in the last 90 days
+    refunded_total: Decimal = Decimal("0")   # already refunded on THIS order (executed disputes)
 
 
 @dataclass(frozen=True)

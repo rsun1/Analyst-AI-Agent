@@ -53,5 +53,6 @@ def load_facts(wf_conn: Connection, order_id: str, exclude_dispute_id: int | Non
     if loaded is None:
         return None
     facts, customer_ids = loaded
-    has_open, refunds = dispute_history(wf_conn, order_id, customer_ids, exclude_dispute_id)
-    return OrderFacts(**{**facts.__dict__, "has_open_dispute": has_open, "refunds_last_90d": refunds})
+    has_open, refunds, refunded = dispute_history(wf_conn, order_id, customer_ids, exclude_dispute_id)
+    return OrderFacts(**{**facts.__dict__, "has_open_dispute": has_open,
+                         "refunds_last_90d": refunds, "refunded_total": refunded})

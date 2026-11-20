@@ -51,6 +51,13 @@ def test_r03b_not_delivered_goes_to_human(status):
           Outcome.NEEDS_REVIEW, rules.R03B, ReviewType.POLICY)
 
 
+def test_r04_cannot_refund_more_than_what_is_left():
+    f = facts(paid_total=D("100"), refunded_total=D("70"))
+    check(evaluate(f, claim("30.01")), Outcome.REJECT, rules.R04)
+    check(evaluate(f, claim("30")), Outcome.AUTO_APPROVE, rules.R10)
+    assert "already refunded" in evaluate(f, claim("30.01")).reasoning
+
+
 @pytest.mark.parametrize("paid", [None, D("0")])
 def test_r04_nothing_was_paid(paid):
     check(evaluate(facts(paid_total=paid), claim()), Outcome.REJECT, rules.R04)
