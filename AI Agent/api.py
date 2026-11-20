@@ -52,6 +52,7 @@ from logger import log_feedback_event, log_query_event
 from multi_query import is_broad_question, run_multi_query_analysis
 from schema_loader import validate_catalog_against_db
 from sql_generator import UNCLEAR_INSTRUCTION
+from workflow.api import router as workflow_router
 
 log = logging.getLogger("analytics_agent.api")
 if not log.handlers:  # uvicorn only configures its own loggers; emit our access log as plain JSON lines
@@ -112,6 +113,10 @@ def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
         raise HTTPException(503, "Server is not configured: API_KEY is not set.")
     if not x_api_key or not secrets.compare_digest(x_api_key, API_KEY):
         raise HTTPException(401, "Missing or invalid API key.")
+
+
+# Refund/dispute workflow (see workflow/api.py). Same API key as the agent endpoints.
+app.include_router(workflow_router, dependencies=[Depends(require_api_key)])
 
 
 # ── SQL validation (first guard; the database role is the real one) ───────────
