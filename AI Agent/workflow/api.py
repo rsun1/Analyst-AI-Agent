@@ -5,6 +5,7 @@ which also adds the X-API-Key check to every route here).
     POST /disputes                     submit a dispute -> decision (+ refund if auto-approved)
     GET  /disputes/{id}                current state
     GET  /disputes/{id}/audit          the full decision trail, oldest first
+    GET  /disputes/{id}/replay         the trail as a readable story + a consistency check
     POST /disputes/{id}/retry-refund   retry a failed refund (3 failures -> human review)
     GET  /approvals?status=pending     the review queue
     POST /approvals/{id}/decision      a human approves or rejects (header X-Reviewer)
@@ -30,6 +31,7 @@ from pydantic import BaseModel, Field
 from db import get_workflow_connection
 from workflow import service
 from workflow.models import ReasonCategory
+from workflow.replay import replay_audit
 from workflow.service import InvalidClaim, OrderNotFound, RefundNotAllowed
 from workflow.states import InvalidTransition
 from workflow.store import (
@@ -136,6 +138,25 @@ def read_audit(dispute_id: int):
         except DisputeNotFound:
             raise HTTPException(404, f"Dispute {dispute_id} not found.")
         return [AuditEntry(**a) for a in list_audit(conn, dispute_id)]
+
+
+class ReplayOut(BaseModel):
+    dispute_id: int
+    summary: dict
+    narrative: str
+    audit_ok: bool
+    problems: list[str]
+
+
+@router.get("/disputes/{dispute_id}/replay", response_model=ReplayOut)
+def replay(dispute_id: int):
+    """The decision story rebuilt from the audit log, plus a consistency check of the trail."""
+    try:
+        r = replay_audit(dispute_id)
+    except DisputeNotFound:
+        raise HTTPException(404, f"Dispute {dispute_id} not found.")
+    return ReplayOut(dispute_id=r.dispute_id, summary=jsonable_encoder(r.summary), narrative=r.narrative,
+                     audit_ok=r.ok, problems=r.problems)
 
 
 @router.post("/disputes/{dispute_id}/retry-refund", response_model=StatusResponse)
