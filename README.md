@@ -274,7 +274,7 @@ The thresholds (100 and 450 BRL are about the median and the 95th percentile of 
 | No half-finished disputes | every service call is one transaction; status and audit row commit together or not at all | rollback tests in `test_workflow_store.py` |
 | Approvals survive a restart and cannot be doubled | approvals are rows in Postgres; row locks serialise two reviewers, so one wins and the other gets a 409 | `test_t10_*` in `test_workflow_service.py` |
 | Money moves at most once | idempotency key `dispute-<id>-attempt-<n>`; a replayed key returns the first result; the refundable amount shrinks after each refund | `test_workflow_service.py` |
-| The audit trail cannot be rewritten by the app | the `olist_workflow` role has INSERT and SELECT on `audit_log`, no UPDATE or DELETE; it also cannot read the Olist tables | checked by hand when the schema was created (UPDATE and DELETE on `audit_log` are refused, Olist tables unreadable), not by an automated test; `test_workflow_replay.py` shows that an edited trail is detected |
+| The audit trail cannot be rewritten by the app | the `olist_workflow` role has INSERT and SELECT on `audit_log`, no UPDATE or DELETE; it also cannot read the Olist tables | `test_workflow_permissions.py` connects as that role and shows UPDATE, DELETE and TRUNCATE on `audit_log` are refused, nothing in the schema can be deleted, the schema cannot be altered and the Olist tables cannot be read (the tests were checked to fail when the role is granted UPDATE); `test_workflow_replay.py` shows that an edited trail is detected |
 | The model cannot approve anything | `tighten()` is the only way an opinion changes a decision and it only turns an approval into a human review; customer text is treated as untrusted input; a model outage falls back to the pure rules | `test_workflow_llm.py` (including a sweep over every decision and opinion) |
 | Any decision can be reconstructed | `python -m workflow.replay <id>` rebuilds who, when, which rule, which evidence and why from the audit log alone and checks that the trail is consistent | `test_workflow_replay.py` |
 
@@ -318,7 +318,7 @@ Optional LLM assist (classify the free-text reason, a second opinion that can on
 - **The LLM assist has only been tested with fakes.** The guardrails are tested; how good the model's classification and second opinion are has not been measured.
 - **The dispute history uses the real clock** (90-day refund count) while the order timeline uses the simulated `as_of`.
 - **No list or search endpoint** for disputes; the UI tracks the ones submitted in the session.
-- Tests: 218 of the 301 tests in `tests/` cover this agent (`test_workflow_*.py`, `test_disputes_page.py`); the database ones skip when Postgres is down.
+- Tests: 232 of the 315 tests in `tests/` cover this agent (`test_workflow_*.py`, `test_disputes_page.py`); the database ones skip when Postgres is down.
 
 ---
 
