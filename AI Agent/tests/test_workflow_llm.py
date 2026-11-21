@@ -206,6 +206,21 @@ def test_second_opinion_escalates_an_auto_approval_and_no_money_moves(clean):
     assert details["llm_second_opinion"]["escalate"] is True
 
 
+def test_without_an_llm_there_is_no_opinion_to_record():
+    """'No check was made' must not look like 'a check found no concern' in the audit trail."""
+    assert NullAssist().second_opinion(FACTS, CLAIM, APPROVE) is None
+    assert safe_second_opinion(NullAssist(), FACTS, CLAIM, APPROVE) is None
+
+
+@db_only
+def test_the_audit_records_no_second_opinion_when_none_was_asked(clean):
+    r = sub(SMALL, "50", NullAssist())
+    assert r.status is Status.REFUND_EXECUTED
+    assert audit(r.dispute_id)[1]["details"]["llm_second_opinion"] is None
+    from workflow import replay
+    assert "second opinion" not in replay.replay_audit(r.dispute_id).narrative
+
+
 @db_only
 def test_no_concern_means_the_rules_decision_stands(clean):
     gw = MockPaymentGateway()

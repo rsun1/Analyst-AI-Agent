@@ -37,7 +37,7 @@ class Opinion:
 
 class Assist(Protocol):
     def classify_reason(self, reason_text: str) -> ReasonCategory: ...
-    def second_opinion(self, facts: OrderFacts, claim: Claim, decision: Decision) -> Opinion: ...
+    def second_opinion(self, facts: OrderFacts, claim: Claim, decision: Decision) -> Opinion | None: ...
     def reviewer_brief(self, facts: OrderFacts, claim: Claim, decision: Decision) -> str: ...
 
 
@@ -47,8 +47,8 @@ class NullAssist:
     def classify_reason(self, reason_text: str) -> ReasonCategory:
         return ReasonCategory.OTHER
 
-    def second_opinion(self, facts, claim, decision) -> Opinion:
-        return Opinion(False)
+    def second_opinion(self, facts, claim, decision) -> Opinion | None:
+        return None  # no check was made: the audit must not claim one was ("no opinion" is not "no concern")
 
     def reviewer_brief(self, facts, claim, decision) -> str:
         return ""
