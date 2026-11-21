@@ -10,7 +10,7 @@ Two agents on one small platform, built on the **Olist** Brazilian e-commerce da
 | Why it can be trusted | An eval suite (factual accuracy 27.8% to 70.6% on v1) and a database-enforced read-only role | A state machine, atomic transitions, an append-only audit log that can be replayed, and a model that can only escalate |
 | Where to look | [How it works](#how-it-works-step-by-step), [Evaluation](#evaluation) | [Dispute workflow agent](#dispute-workflow-agent-refund-approvals) |
 
-> **Versions and branches.** The `v1-constrained` tag is the original SQLite + JSON-vector-store implementation. `aws-dashboard` is the current branch and the repository's default: it has the skills orchestrator, the executive dashboard, the AWS deployment and the dispute workflow. `main` is the earlier Postgres + pgvector version (v2) and is behind it by a number of commits; it has not been merged forward.
+> **Versions and branches.** The `v1-constrained` tag is the original SQLite + JSON-vector-store implementation. Development happens on `aws-dashboard`, the repository's default branch: it has the skills orchestrator, the executive dashboard, the AWS deployment and the dispute workflow. `main` was fast-forwarded to it (it used to be the earlier Postgres + pgvector version, v2) and can lag behind later commits.
 
 ## What this project shows
 
