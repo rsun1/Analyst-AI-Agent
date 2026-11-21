@@ -146,6 +146,7 @@ docker compose up -d
 # 2. Copy olist.sqlite into Postgres (drops and recreates tables; creates the read-only role)
 python -m migrate_to_postgres
 python -m setup_logging_db --import-jsonl   # log tables + INSERT-only role; imports the sample query_log.jsonl
+python -m setup_workflow_db                 # only for the dispute workflow agent (see its section below)
 
 # 3. Chunk, embed and store the schema docs in the schema_chunks pgvector table
 python -m ingest
@@ -226,7 +227,113 @@ python -m pytest tests -q
 
 ---
 
+## Dispute workflow agent (refund approvals)
+
+The analytics agent above only reads. This second agent **acts**: a customer disputes an order, a written policy decides what happens, doubtful cases wait for a human, money moves through a (mock) payment API, and every step lands in an append-only audit trail. It reuses the same Postgres, the Olist tables as order history, the API and the UI.
+
+```
+POST /disputes ─▶ service.submit_dispute()  (one transaction, per-order advisory lock)
+                    1. order facts          read-only role: status, amount paid, delivery dates, review score
+                    2. rules.evaluate()     ordered, explainable rules; the first match decides
+                    3. LLM assist (optional) can only escalate an auto-approval to a human, never approve
+                    4. store.transition()   lock row -> check the state machine -> update status + write audit
+                        │
+        reject ─────────┼───────── needs_review ──────────── auto_approve
+          ▼                              ▼                          ▼
+      rejected               pending_review + approval row     auto_approved ─▶ refund
+      (end)                  (persisted in Postgres)
+                                         │  POST /approvals/{id}/decision  (X-Reviewer: name)
+                                         ▼
+                             approved ─▶ refund       rejected (end)
+
+refund ─▶ refund_executed (end)  |  refund_failed ─▶ retry (new idempotency key) ─▶ after 3 failures: back to human review
+```
+
+### Policy (`workflow/rules.py`, written up in [`docs/refund-policy.md`](docs/refund-policy.md))
+
+Rules run in priority order and the first match wins, so the order of the list is the policy. When unsure the answer is a human, never an automatic approval.
+
+| Rule | Condition | Outcome |
+|------|-----------|---------|
+| R02 | another dispute on the order is still open | reject |
+| R03 / R03B | order canceled or unavailable / not delivered yet | reject / human |
+| R04 | nothing paid, or more than what is still refundable (paid minus already refunded) | reject |
+| R05B / R05 | delivered but no delivery date / more than 30 days since delivery | human ("I cannot judge this") / reject |
+| R06 | the claim contradicts the records (says "not received" but delivered and a 4-5 star review; says "late" but arrived on time) | human, `agent_uncertain` |
+| R07 / R08 | amount at or above 450 BRL / 2+ refunds for this person in 90 days | human, `policy` |
+| R09 / R10 | late delivery with a 1-2 star review and at most 100 BRL / any claim of at most 100 BRL inside the window | auto-approve |
+| R99 | nothing else applies | human, `policy` |
+
+The thresholds (100 and 450 BRL are about the median and the 95th percentile of order value) come from the Olist data, not from a business owner, so they are a starting point. Unknown orders and malformed amounts are rejected with a 400 and nothing is stored.
+
+### What it is designed to guarantee
+
+| Guarantee | How | Where it is tested |
+|-----------|-----|--------------------|
+| Only legal state changes | one table of allowed moves, one `transition()` entry point, plus a database `CHECK` on the status values | `test_workflow_states.py`, `test_workflow_store.py` |
+| No half-finished disputes | every service call is one transaction; status and audit row commit together or not at all | rollback tests in `test_workflow_store.py` |
+| Approvals survive a restart and cannot be doubled | approvals are rows in Postgres; row locks serialise two reviewers, so one wins and the other gets a 409 | `test_t10_*` in `test_workflow_service.py` |
+| Money moves at most once | idempotency key `dispute-<id>-attempt-<n>`; a replayed key returns the first result; the refundable amount shrinks after each refund | `test_workflow_service.py` |
+| The audit trail cannot be rewritten by the app | the `olist_workflow` role has INSERT and SELECT on `audit_log`, no UPDATE or DELETE; it also cannot read the Olist tables | checked by hand when the schema was created (UPDATE and DELETE on `audit_log` are refused, Olist tables unreadable), not by an automated test; `test_workflow_replay.py` shows that an edited trail is detected |
+| The model cannot approve anything | `tighten()` is the only way an opinion changes a decision and it only turns an approval into a human review; customer text is treated as untrusted input; a model outage falls back to the pure rules | `test_workflow_llm.py` (including a sweep over every decision and opinion) |
+| Any decision can be reconstructed | `python -m workflow.replay <id>` rebuilds who, when, which rule, which evidence and why from the audit log alone and checks that the trail is consistent | `test_workflow_replay.py` |
+
+Example replay of a high-value dispute that a person approved:
+
+```
+sent_to_human_review: submitted -> pending_review [R07_HIGH_VALUE]
+    why: Requested 600 is at or above the high-value limit (450).
+    evidence: order status=delivered, paid=650.34, requested=600, delivered 2018-04-30 vs estimate 2018-05-09, review score=4, ...
+human_approved: pending_review -> approved          (human:alice)
+refund_succeeded: approved -> refund_executed       (system:mock-payments)
+Audit check: OK
+```
+
+### Run it
+
+```bash
+cd "AI Agent"
+python -m setup_workflow_db                   # workflow schema + the olist_workflow role (safe to re-run)
+uvicorn api:app --port 8000                   # the workflow routes are part of the same API
+streamlit run app.py                          # sidebar: "Dispute desk" (?page=disputes)
+```
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /disputes` | submit order id, amount and reason; returns the decision (201). `as_of` simulates "today" because the Olist data is from 2016-2018 |
+| `GET /disputes/{id}` · `/audit` · `/replay` | current state · raw audit rows · the decision story with a consistency check |
+| `POST /disputes/{id}/retry-refund` | retry a failed refund |
+| `GET /approvals?status=pending` | the review queue |
+| `POST /approvals/{id}/decision` | a human approves or rejects (`X-Reviewer` header is required and recorded) |
+
+Errors: 400 bad input or unknown order, 404 unknown id, 409 the dispute is not in a state that allows it (already decided, illegal move), 422 malformed body. A policy rejection is a normal 201 with the rule and reason.
+
+Optional LLM assist (classify the free-text reason, a second opinion that can only escalate, a short brief for the reviewer) is **off** by default: set `USE_LLM_ASSIST=1` together with `OPENAI_API_KEY`.
+
+### Known limits
+
+- **Mock payments only.** The gateway is a fake with an idempotency key and injectable failures. It is called while the dispute's row lock is held, which is fine for a mock; a real provider needs an outbox or a two-phase flow.
+- **Reviewer identity is a name, not a login.** `X-Reviewer` is trusted behind the shared API key, and nothing stops the person who submitted a dispute from approving it. Real use needs per-user authentication and separation of duties.
+- **Not deployed yet.** The AWS deployment predates this agent: the production database has no `workflow` schema or role. The local default password for `olist_workflow` is for development only.
+- **The LLM assist has only been tested with fakes.** The guardrails are tested; how good the model's classification and second opinion are has not been measured.
+- **The dispute history uses the real clock** (90-day refund count) while the order timeline uses the simulated `as_of`.
+- **No list or search endpoint** for disputes; the UI tracks the ones submitted in the session.
+- Tests: 218 of the 301 tests in `tests/` cover this agent (`test_workflow_*.py`, `test_disputes_page.py`); the database ones skip when Postgres is down.
+
+---
+
 ## Key source files
+
+| File | Purpose |
+|------|---------|
+| `setup_workflow_db.py` | Creates the `workflow` schema (disputes, approvals, refund attempts, append-only audit log) and the `olist_workflow` role; never drops anything |
+| `workflow/states.py` | Dispute states and the only allowed moves between them |
+| `workflow/rules.py` · `models.py` · `facts.py` | The refund policy as ordered rules; the data types; loading order facts (read-only role) and dispute history |
+| `workflow/store.py` | Database access; `transition()` is the single atomic way to change a status |
+| `workflow/service.py` · `payments_mock.py` | Submit, decide and retry flows (one transaction each); the fake idempotent payment gateway |
+| `workflow/llm_assist.py` | Optional model help that can only escalate to a human |
+| `workflow/replay.py` · `workflow/api.py` | Decision replay and consistency check; the HTTP routes for the workflow |
+| `disputes_page.py` | Streamlit "Dispute desk": submit, review queue, decision trail |
 
 | File | Purpose |
 |------|---------|
@@ -263,6 +370,8 @@ python -m pytest tests -q
 | `PG_ADMIN_USER` / `PG_ADMIN_PASSWORD` | `olist_admin` / `olist_admin_pw` | Owner role used by migration and ingest (**local-dev defaults, change for any shared deployment**) |
 | `PG_LOGGER_USER` / `PG_LOGGER_PASSWORD` | `olist_logger` / `olist_logger_pw` | INSERT-only role the API uses to write log events (**local-dev defaults**) |
 | `PG_READER_USER` / `PG_READER_PASSWORD` | `olist_reader` / `olist_reader_pw` | SELECT-only role used by the agent (**local-dev defaults**) |
+| `PG_WORKFLOW_USER` / `PG_WORKFLOW_PASSWORD` / `PG_WORKFLOW_DSN` | `olist_workflow` / `olist_workflow_pw` / built from the above | Role for the dispute workflow: read/write on the `workflow` schema, INSERT-only on its audit log (**local-dev defaults; set a strong password anywhere shared**) |
+| `USE_LLM_ASSIST` / `LLM_ASSIST_TIMEOUT_S` | `0` / `8` | Turns on the optional model help in the dispute workflow, and its per-call timeout in seconds |
 | `PG_ADMIN_DSN` / `PG_READER_DSN` | built from the above | Full connection strings; override the individual settings |
 | `API_KEY` | (none) | Key required in the `X-API-Key` header; unset means the API refuses requests (503) |
 | `DB_POOL_MIN` / `DB_POOL_MAX` | `1` / `10` | Size of the API's database connection pool (per process) |
