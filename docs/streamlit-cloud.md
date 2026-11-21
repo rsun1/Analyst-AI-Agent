@@ -1,5 +1,7 @@
 # Deploying the UI on Streamlit Community Cloud
 
+> **Historical.** This was the interim free-tier demo (Streamlit Community Cloud for the UI, Koyeb for the API, Neon for Postgres). The reference deployment is now on AWS; see [`aws-deploy.md`](aws-deploy.md). The Streamlit link used then now redirects to a Streamlit sign-in. The steps below still work if you want a free-tier UI.
+
 The UI is a thin client: it only calls the HTTP API (`api_client.py`), so it needs no database or OpenAI key.
 
 1. Push `main` to GitHub (the repo must be public, or grant Streamlit access).

@@ -1,26 +1,57 @@
-# Analytics AI Agent
+# Olist AI Agents: analytics and refund workflow
 
-Python application that lets stakeholders ask natural-language questions about the **Olist** Brazilian e-commerce dataset, stored in **PostgreSQL**. The agent retrieves relevant schema context via RAG (pgvector), proposes SQL with an explanation, and after approval runs the query and returns results plus plain-English business insights.
+Two agents on one small platform, built on the **Olist** Brazilian e-commerce dataset in **PostgreSQL** (with pgvector). One FastAPI service and one Streamlit UI serve both, and they run on AWS (ECS Fargate and RDS).
 
-> **Versions.** `main` is **v2**: Postgres + pgvector. The original SQLite + JSON-vector-store implementation is preserved at the git tag `v1-constrained`.
+| | Analytics agent | Dispute workflow agent |
+|---|---|---|
+| Job | Answer business questions in plain English | Handle refund disputes from request to refund |
+| Data access | Reads only | Reads orders, **writes** disputes, approvals, refunds and audit records |
+| Human in the loop | Approves or edits the proposed SQL before it runs | Approves the doubtful cases; a written policy decides the rest |
+| Why it can be trusted | An eval suite (factual accuracy 27.8% to 70.6% on v1) and a database-enforced read-only role | A state machine, atomic transitions, an append-only audit log that can be replayed, and a model that can only escalate |
+| Where to look | [How it works](#how-it-works-step-by-step), [Evaluation](#evaluation) | [Dispute workflow agent](#dispute-workflow-agent-refund-approvals) |
 
-## Live demo
+> **Versions and branches.** The `v1-constrained` tag is the original SQLite + JSON-vector-store implementation. `aws-dashboard` is the current branch and the repository's default: it has the skills orchestrator, the executive dashboard, the AWS deployment and the dispute workflow. `main` is the earlier Postgres + pgvector version (v2) and is behind it by a number of commits; it has not been merged forward.
 
-**Try it: https://analyst-ai-agent-olist.streamlit.app/**
+## What this project shows
 
-Ask a question about the Olist e-commerce data in plain English. The agent proposes SQL and an explanation; you approve or edit it, then it runs the query read-only and explains the result.
+| Topic | Where to look |
+|---|---|
+| Hosting on AWS | [Deploying on AWS](#deploying-on-aws): ECS Express Mode on Fargate, RDS, Secrets Manager, least-privilege IAM, CloudWatch, a runbook and the gotchas hit on the way |
+| Questioning AI output | Analytics: a human approves the SQL, the eval harness, the read-only role. Workflow: rules decide and the model can only escalate, with the guarantees table and its tests |
+| Architecture and trade-offs | The "Known limits" sections, [`docs/api-notes.md`](docs/api-notes.md), [`docs/refund-policy.md`](docs/refund-policy.md) |
+| APIs and the front end | `api.py` and `workflow/api.py` (error-code conventions), `api_client.py`, the Streamlit pages |
+| Databases | [`docs/db-comparison.md`](docs/db-comparison.md): SQLite, MySQL, Postgres, MongoDB and a vector database compared; three database roles with different privileges |
+
+## Architecture
 
 ```
-Streamlit Cloud (UI)  ->  HTTPS + API key  ->  FastAPI on Koyeb (AI Builder Space)  ->  Neon Postgres + pgvector
-                                                      |
-                                                      +-> OpenAI (SQL generation, embeddings, insights)
+Browser ──HTTPS──> UI: Streamlit (ECS Fargate)
+                        │  HTTPS + X-API-Key
+                        ▼
+                   API: FastAPI (ECS Fargate)
+                     ├─ analytics routes  /ask /revise /execute /analyze ...   ──> OpenAI (SQL, embeddings, insights)
+                     ├─ workflow routes   /disputes /approvals                 ──> mock payment gateway
+                     └─ Postgres on RDS: one database, three roles
+                          olist_reader    SELECT only             public.* (Olist data, schema_chunks for RAG), agent_meta (skills)
+                          olist_logger    INSERT only             app_logs.* (queries, feedback)
+                          olist_workflow  read/write; the audit   workflow.* (disputes, approvals, refund attempts, audit log)
+                                          log is append-only
 ```
 
-- **Free tiers, not always on.** Each layer sleeps when idle, so the first request after a quiet period can take several extra seconds (or need one retry). Hosting is free for 12 months from the first deploy (2026-11-13).
-- **Read-only by design.** Generated SQL runs as a `SELECT`-only database role in a read-only session with a statement timeout and a row cap.
-- **Logging.** Questions, SQL edits and feedback are stored in Postgres (an INSERT-only role) to track human corrections.
-- **Also on AWS.** The same app runs on ECS Fargate with RDS; see [Deploying on AWS](#deploying-on-aws). The demo link for that deployment is shared on request.
-- **Measured on the deployed stack.** The eval suite can target a live API (`EVAL_API_URL` / `EVAL_API_KEY`, see [Evaluation](#evaluation)): 12/17 PASS (70.6%), the same as the v1 baseline. Details of the deploy: [`docs/streamlit-cloud.md`](docs/streamlit-cloud.md).
+Each role can see only its own schema, so a bug or a hostile prompt in one agent cannot reach the other's data.
+
+## Live deployment
+
+The reference deployment runs on AWS in `us-east-2`: the API and the UI are two ECS Express Mode (Fargate) services, the database is RDS PostgreSQL 18 with pgvector, and the secrets are in Secrets Manager. Details, scripts and costs are in [Deploying on AWS](#deploying-on-aws).
+
+- **The link is shared on request**, not published here. The public URL has no login and every analytics question calls the OpenAI API, so an open link would cost money and could be abused. The deployment may also be paused between demos to save cost.
+- **The Dispute desk is off in the public UI**, because it lets whoever opens it approve refunds. The workflow API is deployed; [Run it](#run-it) shows how to use the desk against it from your own machine.
+- **Measured accuracy.** The eval harness can target any deployed API (`EVAL_API_URL` / `EVAL_API_KEY`, see [Evaluation](#evaluation)). The last live run, 12 of 17 questions (70.6%), was on the earlier free-tier deployment and has not been repeated on AWS yet.
+- **Earlier demo.** Before AWS, the UI ran on Streamlit Community Cloud and the API on Koyeb with Neon Postgres (see [`docs/streamlit-cloud.md`](docs/streamlit-cloud.md)). That Streamlit link now redirects to a Streamlit sign-in, so it is not the reference deployment and is no longer linked here.
+
+## Contents
+
+[Deploying on AWS](#deploying-on-aws) · [Why this exists](#why-this-exists) · [Requirements](#requirements) · [Setup](#setup) · [Running the agent](#running-the-agent) · [How it works](#how-it-works-step-by-step) · [Dispute workflow agent](#dispute-workflow-agent-refund-approvals) · [Key source files](#key-source-files) · [Environment variables](#optional-environment-variables) · [Architecture notes](#architecture-notes) · [Evaluation](#evaluation)
 
 ## Deploying on AWS
 
@@ -33,16 +64,16 @@ Browser ──HTTPS──> Application Load Balancer ──> ECS Fargate: UI (St
                                                               │            │
                                                      RDS PostgreSQL        └──> OpenAI
                                                      (+ pgvector)
-        Secrets Manager: OPENAI_API_KEY, API_KEY, PG_READER_DSN, PG_LOGGER_DSN      CloudWatch Logs: /ecs/olist-api, /ecs/olist-ui
+        Secrets Manager: OPENAI_API_KEY, API_KEY, PG_READER_DSN, PG_LOGGER_DSN, PG_WORKFLOW_DSN     CloudWatch Logs: /ecs/olist-api, /ecs/olist-ui
 ```
 
 | Piece | What it is |
 |---|---|
 | Region | `us-east-2` |
-| Images | Two ECR repositories, `olist-api` (`Dockerfile`) and `olist-ui` (`Dockerfile.ui`). The API image is about 64 MB and runs as a non-root user; the UI image ships only the modules the UI imports. |
+| Images | Two ECR repositories, `olist-api` (`Dockerfile`) and `olist-ui` (`Dockerfile.ui`). The API image is about 64 MB and runs as a non-root user; the UI image ships only the modules the UI imports. The current release is tagged `v2`; the previous one, `dash2`, is kept for rollback. |
 | Compute | One ECS cluster, `olist`, with two **ECS Express Mode** services on Fargate: API (0.25 vCPU, 0.5 GB, 1 to 2 tasks) and UI (0.5 vCPU, 1 GB). Express Mode creates the load balancer, target groups, security groups and auto scaling. |
 | Database | RDS for PostgreSQL 18, `db.t4g.micro`, 20 GB gp3, single AZ, pgvector 0.8. The master password is managed by RDS in Secrets Manager. |
-| Secrets | One secret, `olist/app`, holds the four runtime values and is injected into the containers as environment variables. Nothing sensitive is in the image, the repo or the task definition. |
+| Secrets | One secret, `olist/app`, holds the five runtime values (OpenAI key, API key and the three database connection strings) and is injected into the containers as environment variables. Nothing sensitive is in the image, the repo or the task definition. |
 | IAM | `olist-ecs-execution-role` (pull images, write logs, read **only** `olist/app`) and `olist-ecs-infrastructure-role` (AWS managed policy for Express Mode). |
 | Logs | CloudWatch log groups with 14 days of retention. The API writes one JSON line per request. |
 
@@ -58,8 +89,12 @@ The steps below are what produced the running deployment. You need an AWS accoun
 $env:PG_READER_PASSWORD = "<long letters and digits>"
 $env:PG_LOGGER_PASSWORD = "<long letters and digits>"
 .\scripts\aws\load_rds.ps1 -Endpoint <rds-endpoint> -SecretArn <master-secret-arn> [-WithSkills]
+#    Fresh database only: it drops and recreates the Olist tables. To add the dispute workflow to a database
+#    that already has data, use scripts\aws\setup_workflow_rds.ps1 instead (additive; creates the role with a
+#    random password and merges PG_WORKFLOW_DSN into the secret).
 
-# 2. Runtime secrets (reads the OpenAI key from "AI Agent\.env"; generates API_KEY if unset)
+# 2. Runtime secrets, first deployment only (reads the OpenAI key from "AI Agent\.env"; generates API_KEY if unset).
+#    Re-running it overwrites every key in the secret and may rotate API_KEY.
 .\scripts\aws\create_app_secret.ps1 -Endpoint <rds-endpoint>
 
 # 3. Images: build both and push them to ECR (creates the repositories)
@@ -74,13 +109,13 @@ aws ecs create-express-gateway-service --cli-input-json file://deploy/ecs/ui-ser
 
 After the API service is up, allow its security group to reach port 5432 on the database's security group, and put the API's URL in the UI service's `API_URL`. Express Mode returns each service's HTTPS URL when it is created.
 
-**Releasing a new version.** Push images with a new tag, then run `aws ecs update-express-gateway-service` with the full container definition and the new image. A rollout takes about 7 minutes while old and new tasks overlap. Rolling back means pointing the service at the previous tag, so keep the last known-good tag in ECR.
+**Releasing a new version.** Push images with a new tag, then run `aws ecs update-express-gateway-service` with the full container definition and the new image. A rollout takes about 7 minutes while old and new tasks overlap. Rolling back means pointing the service at the previous tag, so keep the last known-good tag in ECR. The workflow needs the `PG_WORKFLOW_DSN` secret reference on the API service, and the UI service sets `ENABLE_DISPUTES_PAGE=0`; both are in `deploy/ecs/*.template.json`.
 
 **Switching the orchestrator on.** Run `python -m ingest_skills` against the database (the `-WithSkills` flag above does it) and set `USE_SKILLS=1` on the API service. The API then routes each question to a metric skill, to a dashboard link, or to a "not computable" explanation. Set `UI_BASE_URL` to the UI's address so dashboard links point to it.
 
 ### What it costs
 
-These are estimates from AWS list prices, so check the Billing console. The load balancer and RDS are the main items, and Fargate is small at these sizes. Expect roughly USD 55 to 70 a month while everything runs; a new account's credits cover the first months. To stop paying, delete both Express services (`aws ecs delete-express-gateway-service`) and stop or delete the RDS instance. Set a budget alert before you start.
+These are estimates from AWS list prices, so check the Billing console. The load balancer and RDS are the main items, and Fargate is small at these sizes. Expect roughly USD 55 to 70 a month while everything runs; a new account's credits cover the first months. To stop paying, delete both Express services (`aws ecs delete-express-gateway-service`) and stop or delete the RDS instance. Set a budget alert before you start. To pause instead of deleting, stop the RDS instance and scale the services down; AWS restarts a stopped RDS instance by itself after 7 days, so it has to be stopped again.
 
 ### Gotchas (so you don't have to hit them)
 
@@ -89,6 +124,10 @@ These are estimates from AWS list prices, so check the Billing console. The load
 - **A 503 right after creating a service.** The load balancer returns 503 until its health checks pass (a few minutes). The container logs show the health check hitting `/health`, which also proves the database connection.
 - **A new account can lack the ECS service-linked role.** The first `create-express-gateway-service` call can fail with "Unable to assume the service linked role" for a moment after the roles are created; retrying works.
 - **Connection pooling.** The app sets `statement_timeout` and a read-only transaction as connection options, and a transaction pooler rejects these, so connect to the database directly.
+- **`aws login` sessions expire.** After a few hours every AWS call fails with "Your session has expired"; run `aws login --profile <profile>` again. On Windows the CLI may not be on `PATH`; the scripts fall back to `%LOCALAPPDATA%\Programs\Amazon\AWSCLIV2\aws.exe`.
+- **Two scripts are destructive on an existing deployment.** `load_rds.ps1` recreates the Olist tables and `create_app_secret.ps1` overwrites every key of the secret. To change one thing, use an additive script such as `setup_workflow_rds.ps1`.
+- **Replacing a service's container definition.** `update-express-gateway-service` replaces the whole container definition, so start from the live configuration (`describe-express-gateway-service`) and change only what you mean to; otherwise environment variables or secrets are dropped silently.
+- **AWS Health notices about Fargate task retirement** (a new platform revision) need no action: the tasks are replaced by the next deployment or automatically, and with the default 100% minimum healthy percent a replacement starts before the old task stops.
 
 ### Known limits and next steps
 
@@ -98,6 +137,8 @@ These are estimates from AWS list prices, so check the Billing console. The load
 - **RDS is still reachable from one admin IP** (used to load data). It should be switched to private once the data is loaded.
 - **Observability stops at logs.** There are no alarms, no failure dashboard by type, and no evals in CI against the deployed endpoint yet.
 - **Accuracy.** About 70% on the evaluation set (12 of 17 scored questions). The approval step exists so a person checks the SQL before it runs.
+- **No evals against the AWS deployment yet.** The harness can target it (`EVAL_API_URL`); the last live run was on the earlier deployment.
+- **The Dispute desk is switched off on the public UI** and the workflow API is protected only by the shared API key; see the dispute workflow's known limits.
 
 ---
 
@@ -112,6 +153,8 @@ That second part turned out to be as hard as the first. The eval harness went th
 The remaining failures are documented too. A system you can't honestly evaluate is a system you can't trust.
 
 **v2** moves the same agent onto a production-shaped data layer: a real database server with a database-enforced read-only role, and vector search done inside Postgres with pgvector instead of in Python. The eval harness carried over unchanged, which is what made it possible to check the migration for regressions (see [Evaluation](#evaluation)).
+
+**Then AWS and a second agent.** The same two containers moved to ECS Fargate with RDS, with the secrets, IAM and logging a real deployment needs. And a second agent was added to show the other half of the job: a system that does not only read. It writes to the database, moves (mock) money and asks a person when it is unsure, with the controls that requires: a state machine, atomic transitions, persistent approvals, an append-only audit trail and a model that is not allowed to approve anything. See [Dispute workflow agent](#dispute-workflow-agent-refund-approvals).
 
 ---
 
@@ -225,6 +268,20 @@ python -m pytest tests -q
 
 5. **Insights** — Results are sent back to the model, which returns a plain-English summary and 1–3 business recommendations grounded in the data.
 
+
+### Skills orchestrator (`USE_SKILLS=1`, on in the AWS deployment)
+
+In front of the steps above, a router (`router.py`) embeds the question, takes the nearest *skills* from pgvector as candidates and makes one small-model call that picks a route:
+
+| Route | What happens |
+|---|---|
+| `analyze` | The chosen skill's reviewed definition, tested SQL and pitfalls are used as context instead of untyped schema chunks, then the steps above run |
+| `redirect` | A link to the executive dashboard with validated parameters (`dashboards.py`) |
+| `not_computable` | An explanation of why the dataset cannot answer it (for example gross margin) |
+| `clarify` / `out_of_scope` | A question back, or a polite refusal |
+
+A skill is a reviewed Markdown file under `skills/<domain>/` (29 files: definition, SQL, pitfalls, how to interpret the result). `skillgen/check.py` is their quality gate: it runs every SQL block against Postgres read-only and applies tie-out checks that catch silent double counting. Broad questions ("Analyze seller performance") go through multi-query analysis (`/scope`, `/analyze`): decompose, run each sub-query, synthesise a report. The router has its own evaluation (`evals/router_eval.py`).
+
 ---
 
 ## Dispute workflow agent (refund approvals)
@@ -331,11 +388,29 @@ Optional LLM assist (classify the free-text reason, a second opinion that can on
 - **The LLM assist has only been tested with fakes.** The guardrails are tested; how good the model's classification and second opinion are has not been measured.
 - **The dispute history uses the real clock** (90-day refund count) while the order timeline uses the simulated `as_of`.
 - **No list or search endpoint** for disputes; the UI tracks the ones submitted in the session.
-- Tests: 232 of the 315 tests in `tests/` cover this agent (`test_workflow_*.py`, `test_disputes_page.py`); the database ones skip when Postgres is down.
+- Tests: 237 of the 320 tests in `tests/` cover this agent (`test_workflow_*.py`, `test_disputes_page.py`); the database ones skip when Postgres is down.
 
 ---
 
 ## Key source files
+
+Paths are inside `AI Agent/` unless noted.
+
+### Analytics agent
+
+| File | Purpose |
+|------|---------|
+| `agent.py` · `agent_core.py` | CLI flow (question, propose, approve or edit, execute, explain); the pure-function steps both the CLI and the API use |
+| `router.py` · `skill_loader.py` · `skills/` | The orchestrator, the loader and validator for skills, and the 29 skill files |
+| `skillgen/` | `build.py` renders skill specs into files, `check.py` is the quality gate (runs every SQL block read-only), `migrate_existing.py` was the one-off migration of the old metric definitions |
+| `rag.py` · `ingest.py` · `ingest_skills.py` | Retrieval of schema chunks by cosine distance inside Postgres; embedding the schema docs; embedding the skills for the router |
+| `schema_catalog.yml` · `olist_schema_queries.md` · `schema_loader.py` | Ground-truth schema (tables, columns, joins, pitfalls); named metric definitions with sample SQL; the loader that validates the catalog against the live database and renders the prompt block |
+| `sql_generator.py` · `sql_correction.py` · `sql_errors.py` | SQL generation with the full schema and few-shot examples; one retry loop that asks the model to fix a failed query; classification of Postgres errors into retry hints |
+| `insights.py` · `multi_query.py` · `chart.py` · `conversation.py` | Plain-English summary of results; decomposition of broad questions; automatic chart choice; multi-turn history |
+| `dashboards.py` · `dashboard_page.py` | Validated dashboard deep links and data builders; the Streamlit executive overview page |
+| `evals/scorer.py` · `evals/router_eval.py` · `evals/test_dataset.json` | The answer eval (runs the questions through the agent, judges with an LLM), the router eval, and the shared dataset |
+
+### Dispute workflow agent
 
 | File | Purpose |
 |------|---------|
@@ -348,29 +423,18 @@ Optional LLM assist (classify the free-text reason, a second opinion that can on
 | `workflow/replay.py` · `workflow/api.py` | Decision replay and consistency check; the HTTP routes for the workflow |
 | `disputes_page.py` | Streamlit "Dispute desk": submit, review queue, decision trail |
 
+### Shared code, data and operations
+
 | File | Purpose |
 |------|---------|
-| `docker-compose.yml` | Runs `pgvector/pgvector:pg16` locally |
-| `setup_logging_db.py` | Creates the `app_logs` schema (query and feedback event tables) and the INSERT-only `olist_logger` role; never drops anything |
-| `logger.py` | Writes query and feedback events to Postgres; falls back to a JSON line on stdout if the write fails |
-| `migrate_to_postgres.py` | One-off copy of `olist.sqlite` into Postgres; converts date columns to `TIMESTAMP`; creates the read-only role |
-| `ingest.py` | Chunks `olist_schema_queries.md` + `schema_catalog.yml`, generates embeddings, stores them in the `schema_chunks` pgvector table |
-| `rag.py` | Embeds the question and retrieves top-k chunks by cosine distance inside Postgres |
-| `db.py` | Read-only Postgres connection, live schema introspection (`information_schema`), query execution |
-| `schema_catalog.yml` | Ground-truth schema: exact table/column names, types, FK relationships, cross-domain join paths, pitfalls |
-| `olist_schema_queries.md` | Named metric definitions with correct sample SQL (used for RAG) |
-| `sql_generator.py` | Builds SQL via OpenAI Chat; includes full schema + few-shot examples in system prompt |
-| `sql_correction.py` | On SQL execution error, asks the model for a corrected query and retries |
-| `sql_errors.py` | Classifies Postgres errors (missing column/table, syntax) into hints for the correction prompt |
-| `agent_core.py` | Pure-function wrappers for each step (RAG, generate, execute, explain); used by the CLI and the API |
-| `agent.py` | CLI flow: question → propose → approve/edit → execute → explain |
-| `api.py` | FastAPI service: `/ask`, `/revise`, `/execute`, `/scope`, `/analyze`, `/schema/status`, `/feedback`, `/health` |
-| `api_client.py` | HTTP client the Streamlit UI uses to call the API |
-| `app.py` | Streamlit web UI |
-| `insights.py` | Generates plain-English summary + business insights from query results |
-| `schema_loader.py` | Loads `schema_catalog.yml`, validates it against the live DB schema, renders the schema block for prompts |
-| `evals/scorer.py` | Evaluation harness: runs all test questions through the agent, judges answers with LLM, saves results |
-| `evals/test_dataset.json` | 20-question test dataset with expected SQL, expected answers, and eval type |
+| `config.py` · `db.py` | All settings from the environment; the three connection pools (reader, logger, workflow), schema introspection, query execution |
+| `api.py` · `api_client.py` · `app.py` | The FastAPI service (analytics routes, and it mounts the workflow routes); the HTTP client the UI uses; the Streamlit UI (assistant, dashboard, dispute desk) |
+| `docker-compose.yml` · `migrate_to_postgres.py` | Local Postgres 16 + pgvector; one-off copy of `olist.sqlite` into Postgres (creates the read-only role) |
+| `setup_logging_db.py` · `logger.py` | The `app_logs` schema and the INSERT-only `olist_logger` role; writing query and feedback events (a JSON line on stdout if the write fails) |
+| `tests/` | 320 tests; 237 of them cover the dispute workflow. Database tests skip when Postgres is not running |
+| `Dockerfile` · `Dockerfile.ui` · `deploy/` (repo root) | The API and UI images; ECS service templates and IAM policy files |
+| `scripts/aws/` (repo root) | `load_rds.ps1` (fresh database), `create_app_secret.ps1` (first deployment), `push_images.ps1`, `setup_workflow_rds.ps1` (additive) |
+| `docs/` (repo root) | `aws-deploy.md` runbook, `api-notes.md`, `db-comparison.md`, `refund-policy.md`, and `streamlit-cloud.md` (the earlier deployment, kept for history) |
 
 ---
 
@@ -386,7 +450,11 @@ Optional LLM assist (classify the free-text reason, a second opinion that can on
 | `PG_WORKFLOW_USER` / `PG_WORKFLOW_PASSWORD` / `PG_WORKFLOW_DSN` | `olist_workflow` / `olist_workflow_pw` / built from the above | Role for the dispute workflow: read/write on the `workflow` schema, INSERT-only on its audit log (**local-dev defaults; set a strong password anywhere shared**) |
 | `ENABLE_DISPUTES_PAGE` | `0` | Shows the Streamlit "Dispute desk". Off by default because the public UI has no login and whoever opens it could approve refunds; the API routes need `X-API-Key` either way |
 | `USE_LLM_ASSIST` / `LLM_ASSIST_TIMEOUT_S` | `0` / `8` | Turns on the optional model help in the dispute workflow, and its per-call timeout in seconds |
-| `PG_ADMIN_DSN` / `PG_READER_DSN` | built from the above | Full connection strings; override the individual settings |
+| `PG_ADMIN_DSN` / `PG_READER_DSN` / `PG_LOGGER_DSN` | built from the above | Full connection strings; override the individual settings (in AWS they come from Secrets Manager) |
+| `USE_SKILLS` | `0` | Routes `/ask` through the skills orchestrator (on in the AWS deployment); needs `ingest_skills` to have run |
+| `ROUTER_MODEL` / `ROUTER_CANDIDATES` | the chat model / `8` | Model used for routing, and how many nearest skills are offered to it |
+| `UI_BASE_URL` | `http://localhost:8501` | Address of the UI, used to build dashboard links |
+| `ENV` | `dev` | `prod` refuses placeholder dashboard links at startup |
 | `API_KEY` | (none) | Key required in the `X-API-Key` header; unset means the API refuses requests (503) |
 | `DB_POOL_MIN` / `DB_POOL_MAX` | `1` / `10` | Size of the API's database connection pool (per process) |
 | `API_URL` | `http://localhost:8000` | Where the Streamlit UI finds the API |
