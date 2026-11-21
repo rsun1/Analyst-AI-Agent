@@ -89,6 +89,39 @@ def test_api_errors_are_shown_not_raised(backend):
     assert any("does not exist" in e.value for e in at.error)
 
 
+def test_the_dispute_desk_is_off_by_default(monkeypatch):
+    """Evaluate the same expression config.py uses, with the variable unset."""
+    import config
+    monkeypatch.delenv("ENABLE_DISPUTES_PAGE", raising=False)
+    src = open(config.__file__, encoding="utf-8").read()
+    assert 'os.getenv("ENABLE_DISPUTES_PAGE", "0")' in src          # the default is "0"
+    assert config.os.getenv("ENABLE_DISPUTES_PAGE", "0").lower() not in ("1", "true", "yes")
+
+
+def _full_app(monkeypatch, enabled: bool, page: str | None):
+    import config
+    monkeypatch.setattr(config, "ENABLE_DISPUTES_PAGE", enabled)
+    monkeypatch.setattr(api_client, "schema_status", lambda: {"live_tables": 11, "drift_warnings": []})
+    at = AppTest.from_file("app.py", default_timeout=20)
+    if page:
+        at.query_params["page"] = page
+    return at.run()
+
+
+def test_switched_off_there_is_no_sidebar_button_and_the_page_says_so(monkeypatch):
+    at = _full_app(monkeypatch, False, None)
+    assert not at.exception and not any("Dispute desk" in b.label for b in at.sidebar.button)
+    at = _full_app(monkeypatch, False, "disputes")
+    assert not at.exception
+    assert any("switched off" in i.value for i in at.info) and not at.tabs   # no queue, no approve buttons
+
+
+def test_switched_on_the_button_and_the_page_appear(monkeypatch, backend):
+    assert any("Dispute desk" in b.label for b in _full_app(monkeypatch, True, None).sidebar.button)
+    assert [t.label for t in _full_app(monkeypatch, True, "disputes").tabs] == \
+        ["Submit a dispute", "Review queue", "Decision trail"]
+
+
 def test_every_sample_uses_a_real_looking_order_and_a_parsable_date():
     import datetime
     for order_id, amount, as_of, reason in disputes_page.SAMPLES.values():

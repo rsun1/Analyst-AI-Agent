@@ -371,6 +371,7 @@ Optional LLM assist (classify the free-text reason, a second opinion that can on
 | `PG_LOGGER_USER` / `PG_LOGGER_PASSWORD` | `olist_logger` / `olist_logger_pw` | INSERT-only role the API uses to write log events (**local-dev defaults**) |
 | `PG_READER_USER` / `PG_READER_PASSWORD` | `olist_reader` / `olist_reader_pw` | SELECT-only role used by the agent (**local-dev defaults**) |
 | `PG_WORKFLOW_USER` / `PG_WORKFLOW_PASSWORD` / `PG_WORKFLOW_DSN` | `olist_workflow` / `olist_workflow_pw` / built from the above | Role for the dispute workflow: read/write on the `workflow` schema, INSERT-only on its audit log (**local-dev defaults; set a strong password anywhere shared**) |
+| `ENABLE_DISPUTES_PAGE` | `0` | Shows the Streamlit "Dispute desk". Off by default because the public UI has no login and whoever opens it could approve refunds; the API routes need `X-API-Key` either way |
 | `USE_LLM_ASSIST` / `LLM_ASSIST_TIMEOUT_S` | `0` / `8` | Turns on the optional model help in the dispute workflow, and its per-call timeout in seconds |
 | `PG_ADMIN_DSN` / `PG_READER_DSN` | built from the above | Full connection strings; override the individual settings |
 | `API_KEY` | (none) | Key required in the `X-API-Key` header; unset means the API refuses requests (503) |

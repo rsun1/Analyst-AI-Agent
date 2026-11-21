@@ -22,6 +22,10 @@
       {
         "value": "8080",
         "name": "PORT"
+      },
+      {
+        "value": "0",
+        "name": "ENABLE_DISPUTES_PAGE"
       }
     ],
     "secrets": [

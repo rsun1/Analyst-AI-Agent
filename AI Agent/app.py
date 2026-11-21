@@ -193,7 +193,7 @@ if st.session_state["_live_schema_tables"] is None:
 # ── Dashboard page (deep links from the assistant: ?page=<name>&date_from=...) ──
 
 from dashboard_page import render_dashboard  # noqa: E402
-from disputes_page import render_disputes  # noqa: E402
+from disputes_page import disputes_enabled, render_disputes  # noqa: E402
 
 DASHBOARD_PAGE = "executive_overview"
 
@@ -223,11 +223,15 @@ with st.sidebar:
     else:
         st.button("📊 Executive dashboard", on_click=_go_dashboard, use_container_width=True, type="primary",
                   help="Charts of GMV, orders, delivery and reviews with a date filter")
-        st.button("🧾 Dispute desk", on_click=_go_disputes, use_container_width=True,
-                  help="Refund workflow: policy decisions, human review queue, audit trail")
+        if disputes_enabled():
+            st.button("🧾 Dispute desk", on_click=_go_disputes, use_container_width=True,
+                      help="Refund workflow: policy decisions, human review queue, audit trail")
 
 if _page == "disputes":
-    render_disputes()
+    if disputes_enabled():
+        render_disputes()
+    else:
+        st.info("The Dispute desk is switched off on this deployment (set ENABLE_DISPUTES_PAGE=1 to enable it).")
     st.stop()
 if _page:
     render_dashboard(_page)

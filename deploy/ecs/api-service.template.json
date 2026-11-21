@@ -52,6 +52,10 @@
       {
         "valueFrom": "arn:aws:secretsmanager:us-east-2:<ACCOUNT_ID>:secret:olist/app-<SUFFIX>:PG_LOGGER_DSN::",
         "name": "PG_LOGGER_DSN"
+      },
+      {
+        "valueFrom": "arn:aws:secretsmanager:us-east-2:<ACCOUNT_ID>:secret:olist/app-<SUFFIX>:PG_WORKFLOW_DSN::",
+        "name": "PG_WORKFLOW_DSN"
       }
     ]
   },

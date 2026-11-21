@@ -28,7 +28,16 @@ $env:PG_LOGGER_PASSWORD = "<28+ letters and digits>"
 ```
 The script reads the master password from Secrets Manager into memory, creates the `olist` database, checks that pgvector is available, then runs `migrate_to_postgres`, `setup_logging_db` and `ingest` (and `ingest_skills` with `-WithSkills`). Expect: all eleven tables loaded, 35 schema chunks, roles `olist_reader` (SELECT only) and `olist_logger` (INSERT only).
 
+## 2b. Adding the dispute workflow to an existing database
+Do **not** re-run `load_rds.ps1` for this: its `migrate_to_postgres` step drops and recreates the Olist tables. Use the additive script instead:
+```powershell
+.\scripts\aws\setup_workflow_rds.ps1 -Endpoint <rds-endpoint> -SecretArn <master-secret-arn> -CheckOnly   # read-only look first
+.\scripts\aws\setup_workflow_rds.ps1 -Endpoint <rds-endpoint> -SecretArn <master-secret-arn>
+```
+It creates the `workflow` schema and the `olist_workflow` role with a random 32-character password that is never printed, adds one key (`PG_WORKFLOW_DSN`) to the `olist/app` secret without touching the others, and checks the role's permissions. Like step 2 it needs your current IP allowed on the RDS security group. Then add `PG_WORKFLOW_DSN` to the API task definition (see `deploy/ecs/api-service.template.json`) and redeploy. The UI's Dispute desk stays off in production: `ENABLE_DISPUTES_PAGE=0`, because the public UI has no login and anyone who can open it could approve refunds.
+
 ## 3. Runtime secrets
+Only for a brand-new secret. To add keys to an existing one, merge them (as `setup_workflow_rds.ps1` does); re-running this script overwrites all keys and generates a new `API_KEY` if `$env:API_KEY` is not set.
 ```powershell
 .\scripts\aws\create_app_secret.ps1 -Endpoint <rds-endpoint>     # creates/updates secret "olist/app", prints only its ARN
 ```

@@ -110,3 +110,6 @@ ROUTER_CANDIDATES = int(os.getenv("ROUTER_CANDIDATES", "8"))
 UI_BASE_URL = os.getenv("UI_BASE_URL", "http://localhost:8501").rstrip("/")
 # prod refuses placeholder dashboard links at startup.
 ENV = os.getenv("ENV", "dev")
+# The Streamlit "Dispute desk" lets whoever opens the UI approve refunds, and the public UI has no
+# login, so it is OFF unless this is set. (The API routes still need X-API-Key either way.)
+ENABLE_DISPUTES_PAGE = os.getenv("ENABLE_DISPUTES_PAGE", "0").lower() in ("1", "true", "yes")

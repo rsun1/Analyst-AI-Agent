@@ -33,6 +33,12 @@ STATUS_ICON = {"refund_executed": "✅", "auto_approved": "✅", "approved": "�
                "rejected": "⛔", "refund_failed": "⚠️", "submitted": "•"}
 
 
+def disputes_enabled() -> bool:
+    """Read at call time so a test (or a restart with new env) takes effect."""
+    import config
+    return config.ENABLE_DISPUTES_PAGE
+
+
 def _status(s: str) -> str:
     return f"{STATUS_ICON.get(s, '•')} {s}"
 
