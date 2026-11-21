@@ -308,13 +308,26 @@ streamlit run app.py                          # sidebar: "Dispute desk" (?page=d
 
 Errors: 400 bad input or unknown order, 404 unknown id, 409 the dispute is not in a state that allows it (already decided, illegal move), 422 malformed body. A policy rejection is a normal 201 with the rule and reason.
 
+To use the Dispute desk against the **deployed** API without exposing it, run the UI on your own machine (PowerShell; needs `aws login` and the API key is read into the process environment only):
+
+```powershell
+cd "AI Agent"
+$aws = "$env:LOCALAPPDATA\Programs\Amazon\AWSCLIV2\aws.exe"
+$env:API_KEY = (& $aws secretsmanager get-secret-value --secret-id olist/app --profile olist-aws --region us-east-2 --query SecretString --output text | ConvertFrom-Json).API_KEY
+$env:API_URL = "https://<api-url>"          # the olist-api service URL
+$env:ENABLE_DISPUTES_PAGE = "1"
+..\.venv\Scripts\streamlit.exe run app.py   # then open http://localhost:8501/?page=disputes
+```
+
+This writes to the production database; delete the test disputes afterwards (the application role cannot delete, by design, so use the admin account).
+
 Optional LLM assist (classify the free-text reason, a second opinion that can only escalate, a short brief for the reviewer) is **off** by default: set `USE_LLM_ASSIST=1` together with `OPENAI_API_KEY`.
 
 ### Known limits
 
 - **Mock payments only.** The gateway is a fake with an idempotency key and injectable failures. It is called while the dispute's row lock is held, which is fine for a mock; a real provider needs an outbox or a two-phase flow.
 - **Reviewer identity is a name, not a login.** `X-Reviewer` is trusted behind the shared API key, and nothing stops the person who submitted a dispute from approving it. Real use needs per-user authentication and separation of duties.
-- **Not deployed yet.** The AWS deployment predates this agent: the production database has no `workflow` schema or role. The local default password for `olist_workflow` is for development only.
+- **Deployed, with the UI page switched off.** The workflow API runs on the same ECS service as the analytics agent (image tag `v2`) and uses a `workflow` schema and an `olist_workflow` role in the RDS database; the role's password is random and lives only in Secrets Manager (`PG_WORKFLOW_DSN`). The public UI has no login, so the Dispute desk is off there (`ENABLE_DISPUTES_PAGE=0`) because anyone who could open the page could approve refunds. To use it, run the UI locally against the deployed API (see below) or switch it on behind an IP restriction or a login. The local default password for `olist_workflow` is for development only.
 - **The LLM assist has only been tested with fakes.** The guardrails are tested; how good the model's classification and second opinion are has not been measured.
 - **The dispute history uses the real clock** (90-day refund count) while the order timeline uses the simulated `as_of`.
 - **No list or search endpoint** for disputes; the UI tracks the ones submitted in the session.
