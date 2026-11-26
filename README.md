@@ -44,6 +44,7 @@ Each role can see only its own schema, so a bug or a hostile prompt in one agent
 
 The reference deployment runs on AWS in `us-east-2`: the API and the UI are two ECS Express Mode (Fargate) services, the database is RDS PostgreSQL 18 with pgvector, and the secrets are in Secrets Manager. Details, scripts and costs are in [Deploying on AWS](#deploying-on-aws).
 
+- **Status: paused since 2026-11-26.** To stop the cost, both ECS services were deleted and the database was stopped; the data, secrets, IAM roles and images are kept. Resuming takes about an hour and gives new URLs; see [`docs/aws-deploy.md`](docs/aws-deploy.md#9-pausing-and-resuming-done-on-2026-11-26).
 - **The link is shared on request**, not published here. The public URL has no login and every analytics question calls the OpenAI API, so an open link would cost money and could be abused. The deployment may also be paused between demos to save cost.
 - **The Dispute desk is off in the public UI**, because it lets whoever opens it approve refunds. The workflow API is deployed; [Run it](#run-it) shows how to use the desk against it from your own machine.
 - **Measured accuracy.** The eval harness can target any deployed API (`EVAL_API_URL` / `EVAL_API_KEY`, see [Evaluation](#evaluation)). The last live run, 12 of 17 questions (70.6%), was on the earlier free-tier deployment and has not been repeated on AWS yet.

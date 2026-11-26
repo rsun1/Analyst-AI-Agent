@@ -89,5 +89,19 @@ aws ecs update-express-gateway-service --cli-input-json file://api-update.json -
 ```
 `api-update.json` has `serviceArn`, `executionRoleArn`, `healthCheckPath` and the complete `primaryContainer` (image, port, logs, environment, secrets) with the new tag. Roll back by sending the previous tag. A rollout takes about 7 minutes. Watch it with `aws ecs describe-services --cluster olist --services olist-api --query "services[0].deployments"`.
 
-## 9. After the demo
+## 9. Pausing and resuming (done on 2026-11-26)
+The deployment costs about USD 2.3 a day while everything runs (measured: ECS 34%, public IPv4 addresses 27%, the load balancer 20%, RDS 17%). It was paused like this, keeping the data and every reusable piece:
+- both Express services deleted (`aws ecs delete-express-gateway-service --service-arn <arn>`; each takes 8 to 9 minutes to go from DRAINING to INACTIVE). Deleting the last one also removed the shared load balancer and its target groups;
+- RDS stopped (`aws rds stop-db-instance --db-instance-identifier olist-db`, about 6 minutes). **AWS starts a stopped RDS instance again after 7 days**, so stop it again or decide to delete it;
+- kept: the RDS data, the `olist/app` secret, the two IAM roles, the ECS cluster, the log groups and the ECR images (`v2` is the current release, `dash2` the previous one). What remains costs roughly USD 3 to 4 a month (storage, secrets, images).
+
+To resume:
+1. `aws rds start-db-instance --db-instance-identifier olist-db`, then wait until `describe-db-instances` says `available` (5 to 10 minutes).
+2. Create the services from `deploy/ecs/*.template.json` as in section 6, API first. **Set the image tag to `:v2`**: the templates say `:latest`, and `latest` in ECR is the very first push (no dispute workflow, no `PG_WORKFLOW_DSN`). The new services get **new URLs**: put the API's URL into the UI template's `API_URL`, then update the API's `UI_BASE_URL`. Keep `ENABLE_DISPUTES_PAGE=0` on the UI.
+3. Check that the new API service's security group may reach port 5432 on the database's security group (the old rule references `sg-0e3f93ad9e196776a`, named `olist-olist-api-vpc-...`, which still exists; if Express creates a different group, add a rule for it).
+4. Verify as in section 7 (`/health`, a test dispute and its replay, then delete the test data with the admin account).
+
+Do not re-run `load_rds.ps1` or `create_app_secret.ps1` to resume: the data and the secret are still there, and both scripts overwrite things.
+
+## 10. After the demo
 Make the database private (turn off public access; the services reach it through their security group), restrict or remove the public URLs, and **stop paying**: delete both services (`aws ecs delete-express-gateway-service --service-arn <arn>`), stop or delete the RDS instance, delete unused ECR images, and delete any CLI access keys. Check the Billing page the next day.
